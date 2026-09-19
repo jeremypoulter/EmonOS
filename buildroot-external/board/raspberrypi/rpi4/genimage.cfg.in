@@ -1,0 +1,26 @@
+image boot.vfat {
+    vfat {
+        files = {
+#BOOT_FILES#
+        }
+    }
+
+    size = 64M
+}
+
+image emonos-rpi4.img {
+    hdimage {
+        partition-table-type = "hybrid"
+    }
+
+    partition boot {
+        partition-type = 0xC
+        bootable = "true"
+        image = "boot.vfat"
+    }
+
+    partition rootfs {
+        partition-type = 0x83
+        image = "rootfs.ext4"
+    }
+}

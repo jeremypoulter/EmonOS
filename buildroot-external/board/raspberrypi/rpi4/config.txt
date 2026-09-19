@@ -1,0 +1,5 @@
+start_file=start4.elf
+fixup_file=fixup4.dat
+kernel=u-boot.bin
+enable_uart=1
+arm_64bit=1

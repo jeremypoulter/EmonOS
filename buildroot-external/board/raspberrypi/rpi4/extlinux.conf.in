@@ -1,0 +1,4 @@
+label EmonOS
+    linux /Image
+    fdt /bcm2711-rpi-4-b.dtb
+    append root=/dev/mmcblk0p2 rootwait rw console=serial0,115200
