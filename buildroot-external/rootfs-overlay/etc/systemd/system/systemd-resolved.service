@@ -1,7 +1,0 @@
-[Unit]
-Description=Network Name Resolution (deferred until network milestone)
-ConditionPathExists=/run/emonos-enable-resolver
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
