@@ -1,0 +1,3 @@
+labgrid==25.0.1
+pytest==8.4.2
+pytest-timeout==2.4.0

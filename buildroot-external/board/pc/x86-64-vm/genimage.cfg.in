@@ -1,0 +1,32 @@
+image efi-part.vfat {
+    vfat {
+        file EFI {
+            image = "efi-part/EFI"
+        }
+
+        file bzImage {
+            image = "bzImage"
+        }
+    }
+
+    size = 16352K
+}
+
+image emonos-x86-64-vm.img {
+    hdimage {
+        partition-table-type = "gpt"
+    }
+
+    partition boot {
+        image = "efi-part.vfat"
+        partition-type-uuid = U
+        offset = 32K
+        bootable = true
+    }
+
+    partition root {
+        image = "rootfs.ext2"
+        partition-type-uuid = root-x86-64
+        partition-uuid = %ROOT_UUID%
+    }
+}
