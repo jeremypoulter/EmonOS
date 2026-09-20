@@ -1,4 +1,5 @@
 label EmonOS
     linux /Image
-    fdt /bcm2711-rpi-4-b.dtb
-    append root=/dev/mmcblk0p2 rootwait rw console=serial0,115200
+    # Use the firmware-provided device tree, including its UART configuration.
+    # The Pi kernel defaults to zero 8250 ports; append replaces the DT bootargs.
+    append root=/dev/mmcblk0p2 rootwait rw 8250.nr_uarts=1 console=ttyS0,115200 earlycon=bcm2835aux,mmio32,0xfe215040

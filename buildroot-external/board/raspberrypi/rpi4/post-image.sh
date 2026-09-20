@@ -12,9 +12,13 @@ cp "${BOARD_DIR}/extlinux.conf.in" "${BINARIES_DIR}/extlinux/extlinux.conf"
 files=("Image" "bcm2711-rpi-4-b.dtb" "u-boot.bin" "extlinux")
 for file in "${BINARIES_DIR}"/rpi-firmware/*; do
     name=$(basename "$file")
-    cp -a "$file" "${BINARIES_DIR}/${name}"
+    cp -aT "$file" "${BINARIES_DIR}/${name}"
     files+=("${name}")
 done
+
+# Firmware package install stamps do not track changes to the board config.
+# Refresh it on every image assembly, after copying the firmware payload.
+cp "${BOARD_DIR}/config.txt" "${BINARIES_DIR}/config.txt"
 
 while IFS= read -r line; do
     if [ "$line" = "#BOOT_FILES#" ]; then
