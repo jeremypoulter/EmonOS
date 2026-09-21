@@ -1,0 +1,27 @@
+tools:
+  qemu: !template "$LG_QEMU_LAUNCHER"
+images:
+  disk: !template "$LG_X86_DISK"
+  bios: !template "$LG_X86_BIOS"
+options:
+  target: x86-64-vm
+  architecture: x86_64
+targets:
+  main:
+    drivers:
+      QEMUDriver:
+        qemu_bin: qemu
+        machine: q35
+        cpu: host
+        memory: 1G
+        extra_args: "-accel kvm -snapshot"
+        disk: disk
+        disk_opts: "aio=threads"
+        bios: bios
+        display: fb-headless
+        nic: "user,model=virtio-net-pci"
+      ShellDriver:
+        prompt: "# "
+        login_prompt: "emonos login: "
+        username: root
+        login_timeout: 300

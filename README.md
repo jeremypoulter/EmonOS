@@ -33,6 +33,35 @@ runtime with:
 docker run --rm hello-world
 ```
 
+## Test the common runtime
+
+Install the pinned test dependencies, then run the x86 harness. `tests/run.sh` automatically
+uses `.venv/bin/python` when that environment exists:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r tests/requirements.txt
+tests/run.sh x86-64-vm
+```
+
+The QEMU launcher checks available memory and retries only the known `io_uring` allocation
+failure. On a development host already under sustained memory pressure, the documented
+process-scoped escape hatch is available without changing host sysctls:
+
+```sh
+EMONOS_QEMU_DISABLE_IO_URING=1 tests/run.sh x86-64-vm
+```
+
+The Raspberry Pi uses the same tests over its serial console. Supply the serial device at
+runtime; prefer a stable `/dev/serial/by-id/` path rather than a numbered `/dev/ttyUSB*` path:
+
+```sh
+EMONOS_PI_SERIAL=/dev/serial/by-id/<adapter-id> tests/run.sh rpi4
+```
+
+Set `EMONOS_TEST_PYTHON` when the dependencies are installed in a virtual environment using
+a non-default Python executable.
+
 ## Dependencies
 
 Buildroot downloads and builds its own toolchain. The host needs standard build tools,

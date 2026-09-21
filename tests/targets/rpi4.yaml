@@ -1,0 +1,16 @@
+options:
+  target: rpi4
+  architecture: aarch64
+targets:
+  main:
+    resources:
+      RawSerialPort:
+        port: !template "$LG_SERIAL_DEVICE"
+        speed: 115200
+    drivers:
+      SerialDriver: {}
+      ShellDriver:
+        prompt: "# "
+        login_prompt: "emonos login: "
+        username: root
+        login_timeout: 300
