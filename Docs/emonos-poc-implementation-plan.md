@@ -149,7 +149,7 @@ register a fixed `binfmt_misc` emulator image, or select a remote builder. Treat
 host-tool prerequisite, not evidence that QEMU assembly itself has been validated.
 
 **Resolved 2026-09-24 — the cross-build works; R6 is retired.** Implemented in the fork as
-[emoncms/emoncms-docker#58](https://github.com/emoncms/emoncms-docker/pull/58) (branch
+[jeremypoulter/emoncms-docker#3](https://github.com/jeremypoulter/emoncms-docker/pull/3) (branch
 `cross-compile-php-extensions`, open, CI green):
 
 - CI resolves the `php:8.4-apache-trixie` index digest once. A matrix job then extracts the
@@ -163,7 +163,7 @@ host-tool prerequisite, not evidence that QEMU assembly itself has been validate
   QEMU runs only the image-assembly steps and the load checks.
 - No ABI check failed, so the native arm64 runner fallback (D16) was not needed.
 - **Publication:** pull requests build without pushing. Pushes to `master` publish (added in
-  #58 at `815e0f8`; before that, publishing was manual only). Manual `workflow_dispatch` runs
+  fork PR #3 at `815e0f8`; before that, publishing was manual only). Manual `workflow_dispatch` runs
   also publish. A manual dispatch of the fork published
   `ghcr.io/jeremypoulter/emoncms` (amd64 + arm64, public, index digest
   `sha256:2686f3c0631ecc2e9951a69a6b601beb53547688c03f5013e388f57b786fd099`). `:latest`
@@ -509,7 +509,7 @@ Nothing is built here. Every task either passes or changes the plan.
 | 0.1 Get QEMU starting reliably | **F5** | **DONE, diagnosis corrected.** Not an rlimit; host memory pressure. Mitigation settled in the harness, host untouched (D15, §8 item 4) |
 | 0.2 Boot a stock aarch64 kernel on `raspi4b` — `-kernel` + `-dtb`, serial to stdio | **R1** | **DONE — PASS, then target dropped.** Real Pi 4 kernel, 4 CPUs at EL2, aarch64 userspace, clean shutdown. Feasible but too divergent to be worth carrying (F4) |
 | 0.3 Probe `raspi4b` networking (GENET) | **R2** | **DONE — no ethernet exists.** The decisive divergence; also the origin of D18 (F7) |
-| 0.4 Create a multi-platform Buildx builder and register pinned binfmt emulators; cross-build arm64 PHP extension artifacts against the exact official PHP 8.4 ABI; assemble/publish the fork's multi-platform image to GitHub Container Registry; validate on Pi | **R6** | **DONE 2026-09-24.** Extensions are cross-compiled in CI and the multi-platform image is published to GHCR by manual dispatch. `php -m`, `ldd` and a full stack start pass on the Pi (F1 resolution note). Upstream merge of #58 is outstanding but does not block the PoC. |
+| 0.4 Create a multi-platform Buildx builder and register pinned binfmt emulators; cross-build arm64 PHP extension artifacts against the exact official PHP 8.4 ABI; assemble/publish the fork's multi-platform image to GitHub Container Registry; validate on Pi | **R6** | **DONE 2026-09-24.** Extensions are cross-compiled in CI and the multi-platform image is published to GHCR by manual dispatch. `php -m`, `ldd` and a full stack start pass on the Pi (F1 resolution note). Work continues on the fork (PR #3); the upstream PR (emoncms/emoncms-docker#58) was closed 2026-09-24 and will be re-proposed once settled. Neither blocks the PoC. |
 | 0.5 Pull by digest, `docker save`, `docker load` into a clean target store, then start Compose with registry access disabled for all images on both architectures | **R5** | Outstanding. This proves saved archives retain the digest references Compose needs and sets data-partition size/minimum SD size. Preliminary arm64 figures (2026-09-24): compressed pull size ≈ 476 MB (web 311, MariaDB 102, Redis 55, Mosquitto 8); unpacked store 1.26 GB; volumes after first start 162 MB. |
 | 0.6 Clone the reference tree at `42ea0f607`; read the 12 files in Appendix A | — | **DONE.** Tree read; Appendix A is the map |
 | **0.7 Confirm the Pi 4 bench** — board, SD cards, USB-serial on the GPIO UART, scriptable switchable power | **R12** | **Partial.** The board, SD card, USB-serial console and Ethernet (DHCP, DNS and registry access) all work. Two findings: the host has three identical CH340 adapters, so the console must be addressed by `/dev/serial/by-path/`, not `by-id` (Appendix B); and the Pi logs `Undervoltage detected!` under load, so the supply needs replacing. **Switchable power is still outstanding.** |
@@ -868,5 +868,5 @@ the corresponding EmonOS file; each was read for this plan.
 | Verified launch — `x86-64-vm` | `-machine q35 -accel kvm -cpu host -m 1G -serial mon:stdio`, `console=ttyS0,115200`; virtio disk → `vda` + all GPT partitions; `-nic user,model=virtio-net-pci` → `eth0` |
 | Verified launch — `rpi4-qemu` **(target deferred by D14; recipe retained)** | `-M raspi4b -m 2G -kernel … -dtb bcm2711-rpi-4-b.dtb -drive file=…,format=raw,if=sd -serial mon:stdio`, **`earlycon=pl011,0xfe201000 console=ttyAMA0,115200`**; SD → `mmcblk1` + all GPT partitions; TCG only, no KVM. Kept deliberately: it is the cheapest way to re-add an aarch64 CI smoke test if the Pi bench becomes a bottleneck (R12) |
 | Test artefacts kept | `$CLAUDE_JOB_DIR/tmp/r1/` (Pi `Image`, `bcm2711-rpi-4-b.dtb`, arm64 initramfs, GPT `sd.img`, boot logs) and `…/tmp/x86/`. Reproducible from the recipes above; not durable storage |
-| Local checkouts | `../emoncms-docker` on `cross-compile-php-extensions` (PR #58: `d145704`, `beaa847`, plus the trixie pin), `../../OpenEnergyMonitor/{EmonScripts,emoncms}`; reference tree at `42ea0f607` |
+| Local checkouts | `../emoncms-docker` on `cross-compile-php-extensions` (fork PR #3), `../../OpenEnergyMonitor/{EmonScripts,emoncms}`; reference tree at `42ea0f607` |
 | Not present | `rauc` on the host (built by Buildroot as a host tool); `labgrid` (host pip, not a Buildroot package [verified]) |
