@@ -162,12 +162,13 @@ host-tool prerequisite, not evidence that QEMU assembly itself has been validate
   `-dev`. `install_redis.sh`, `install_mosquitto.sh` and `docker-php-ext-install` are gone.
   QEMU runs only the image-assembly steps and the load checks.
 - No ABI check failed, so the native arm64 runner fallback (D16) was not needed.
-- **Publication:** the workflow runs only on `pull_request`, which builds without pushing, and
-  on `workflow_dispatch`. It has never had a `push` trigger, so merging to `master`
-  publishes nothing. A manual dispatch of the fork published
+- **Publication:** pull requests build without pushing. Pushes to `master` publish (added in
+  #58 at `815e0f8`; before that, publishing was manual only). Manual `workflow_dispatch` runs
+  also publish. A manual dispatch of the fork published
   `ghcr.io/jeremypoulter/emoncms` (amd64 + arm64, public, index digest
-  `sha256:2686f3c0631ecc2e9951a69a6b601beb53547688c03f5013e388f57b786fd099`). EmonOS pins
-  that digest, so on-demand publication is sufficient for the PoC.
+  `sha256:2686f3c0631ecc2e9951a69a6b601beb53547688c03f5013e388f57b786fd099`). `:latest`
+  now moves with every `master` push, so EmonOS must keep pinning by digest and bump the pin
+  deliberately.
 - **Validated on the Pi 4:** pulled by digest in ~90 s. The container reports Debian 13,
   `aarch64` and PHP 8.4.25. `mysqli`, `gettext`, `redis` 6.3.0 and `mosquitto` all load with
   no missing libraries. The full four-container stack then ran on the Pi (WP3 findings
