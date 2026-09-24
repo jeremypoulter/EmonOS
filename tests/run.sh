@@ -26,7 +26,7 @@ case "$target" in
         export LG_X86_BIOS="$repo_dir/output/x86-64-vm/images/OVMF.fd"
         ;;
     rpi4)
-        : "${EMONOS_PI_SERIAL:?set EMONOS_PI_SERIAL to the Pi console device, preferably under /dev/serial/by-id/}"
+        : "${EMONOS_PI_SERIAL:?set EMONOS_PI_SERIAL to the Pi console device, preferably under /dev/serial/by-path/}"
         export LG_SERIAL_DEVICE="$EMONOS_PI_SERIAL"
         ;;
     *)

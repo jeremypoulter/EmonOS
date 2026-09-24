@@ -53,10 +53,13 @@ EMONOS_QEMU_DISABLE_IO_URING=1 tests/run.sh x86-64-vm
 ```
 
 The Raspberry Pi uses the same tests over its serial console. Supply the serial device at
-runtime; prefer a stable `/dev/serial/by-id/` path rather than a numbered `/dev/ttyUSB*` path:
+runtime rather than a numbered `/dev/ttyUSB*` path, which can change between boots. Use
+`/dev/serial/by-id/` if the adapter reports a unique serial number. Cheap adapters such as the
+CH340 (`1a86`) do not, so several of them share one `by-id` name that points at whichever
+enumerated last. Use the `/dev/serial/by-path/` entry for the USB port instead:
 
 ```sh
-EMONOS_PI_SERIAL=/dev/serial/by-id/<adapter-id> tests/run.sh rpi4
+EMONOS_PI_SERIAL=/dev/serial/by-path/<usb-port-path> tests/run.sh rpi4
 ```
 
 Set `EMONOS_TEST_PYTHON` when the dependencies are installed in a virtual environment using
