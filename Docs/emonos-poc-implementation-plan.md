@@ -595,6 +595,13 @@ index digests as below; `app/images.lock` should start from these.
 | redis | `redis:8.10-trixie` | `sha256:718f745deb7dfefeac6eed7041fc7ec9476b50e61b247932682457c41adafa0e` |
 | mqtt | `eclipse-mosquitto:2.0-openssl` | `sha256:199ea8ef2e35ec2b1b37e59cfd1dbae538ed4dfa4a2251a121a52215a6248a21` |
 
+The web pin is **held at the Pi-tested `2686f3c0…`**, which is emoncms 11.18.0 on PHP 8.4.25.
+The first `master` publish after fork PR #3 merged (2026-09-24) produced
+`sha256:1ded4d5dcc40159d531487b403fda64bccde2ec19487c4351bb6cda51b63c921`, which is emoncms
+11.19.2 on PHP 8.4.26. Both architectures load all four extensions under local emulation,
+but it has not run on the Pi. Decide whether to move the pin when WP3 writes
+`app/images.lock`, and re-run the Pi stack trial before adopting it.
+
 All four containers became healthy. emoncms created its schema in MariaDB 11.8.9 on first
 start, and `GET /` returned 200. Register, login, HTTP input and feed creation all worked.
 An input processlist was set to log to a PHPFina feed. Values published over MQTT with
