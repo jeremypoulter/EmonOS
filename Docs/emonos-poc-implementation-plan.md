@@ -598,7 +598,7 @@ index digests as below; `app/images.lock` should start from these.
 The web pin is **held at the Pi-tested `2686f3c0…`**, which is emoncms 11.18.0 on PHP 8.4.25.
 The first `master` publish after fork PR #3 merged (2026-09-24) produced
 `sha256:1ded4d5dcc40159d531487b403fda64bccde2ec19487c4351bb6cda51b63c921`, which is emoncms
-11.19.2 on PHP 8.4.26. Both architectures load all four extensions under local emulation,
+11.19.2 on PHP 8.4.26, built from `88f1ed2`. It also drops the fork's local `service-runner.py` in favour of upstream's (fork PR #2). Both architectures load all four extensions under local emulation,
 but it has not run on the Pi. Decide whether to move the pin when WP3 writes
 `app/images.lock`, and re-run the Pi stack trial before adopting it.
 
