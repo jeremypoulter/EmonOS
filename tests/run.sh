@@ -24,6 +24,7 @@ case "$target" in
         export LG_QEMU_LAUNCHER="$test_dir/qemu-launch.py"
         export LG_X86_DISK="$repo_dir/output/x86-64-vm/images/emonos-x86-64-vm.img"
         export LG_X86_BIOS="$repo_dir/output/x86-64-vm/images/OVMF.fd"
+        export LG_QEMU_MEMORY="${EMONOS_QEMU_MEMORY:-1G}"
         ;;
     rpi4)
         : "${EMONOS_PI_SERIAL:?set EMONOS_PI_SERIAL to the Pi console device, preferably under /dev/serial/by-path/}"

@@ -4,9 +4,10 @@ EmonOS is a minimal, immutable host OS for the emoncms container stack.
 
 ## Development status
 
-The repository currently implements the first two PoC milestones: a Buildroot-based x86-64
-UEFI VM image that boots to a systemd serial console and runs Docker containers. A/B slots,
-RAUC, the persistent data partition, and the emoncms application stack are subsequent
+The repository implements the Buildroot runtime and its shared x86-64 VM / Raspberry Pi 4
+boot harness. Docker and Compose run on both targets; a separate, gated harness test proves
+the four-image emoncms archive can be loaded into a clean store and started offline. A/B
+slots, the persistent data partition, and the emoncms application service are subsequent
 milestones documented in `Docs/`.
 
 ## Build the x86 VM image
@@ -50,6 +51,14 @@ process-scoped escape hatch is available without changing host sysctls:
 
 ```sh
 EMONOS_QEMU_DISABLE_IO_URING=1 tests/run.sh x86-64-vm
+```
+
+The archive preload test downloads the application images and requires an 8 GB VM. It is
+excluded from normal runs:
+
+```sh
+EMONOS_QEMU_MEMORY=8G EMONOS_RUN_PRELOAD_TEST=1 \
+EMONOS_QEMU_DISABLE_IO_URING=1 tests/run.sh x86-64-vm -k offline_preload
 ```
 
 The Raspberry Pi uses the same tests over its serial console. Supply the serial device at

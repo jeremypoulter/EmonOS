@@ -13,7 +13,7 @@ targets:
         qemu_bin: qemu
         machine: q35
         cpu: host
-        memory: 1G
+        memory: !template "$LG_QEMU_MEMORY"
         extra_args: "-accel kvm -snapshot"
         disk: disk
         disk_opts: "aio=threads"
