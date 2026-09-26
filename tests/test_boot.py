@@ -71,6 +71,24 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
     assert "Hello from Docker!" in output
 
 
+@pytest.mark.timeout(900)
+def test_app_stack(command) -> None:
+    """WP3: first boot loads the archive and starts the offline application stack."""
+    assert command.poll_until_success(
+        "systemctl is-active --quiet emonos-app.service", tries=180, timeout=360.0, sleepduration=2
+    )
+    command.run_check("test ! -e /opt/emonos/preload/images.tar")
+    command.run_check("test ! -e /opt/emonos/preload/images.tar.sha256")
+    services = command.run_check(
+        "docker compose -f /opt/emonos/docker-compose.yml ps --status running --format '{{.Service}}'"
+    )
+    assert set(services) == {"web", "db", "redis", "mqtt"}
+    assert command.run_check("curl -fsS --max-time 10 http://127.0.0.1/ >/dev/null") == []
+
+    # This script runs in the guest, avoiding host-side HTTP/DNS assumptions.
+    command.run_check("/usr/libexec/emonos-app-check", timeout=120)
+
+
 @pytest.mark.timeout(1200)
 def test_offline_preload(command, target_name: str) -> None:
     """D11/R5: a clean store can start locally tagged preloaded images offline."""

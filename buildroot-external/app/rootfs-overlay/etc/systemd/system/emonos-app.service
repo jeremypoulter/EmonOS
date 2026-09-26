@@ -1,0 +1,16 @@
+[Unit]
+Description=EmonOS application stack
+Requires=docker.service
+After=docker.service emonos-preload.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/emonos
+ExecStart=/usr/bin/docker compose -f /opt/emonos/docker-compose.yml up -d --wait --wait-timeout 300
+ExecStop=/usr/bin/docker compose -f /opt/emonos/docker-compose.yml down
+RemainAfterExit=yes
+TimeoutStartSec=330
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

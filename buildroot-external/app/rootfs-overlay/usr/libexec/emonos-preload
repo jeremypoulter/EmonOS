@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+preload=/opt/emonos/preload
+archive="$preload/images.tar"
+checksum="$preload/images.tar.sha256"
+done=/var/lib/emonos/preload.done
+
+mkdir -p "$(dirname "$done")"
+test -f "$archive"
+test -f "$checksum"
+expected=$(cat "$checksum")
+actual=$(sha256sum "$archive" | awk '{print $1}')
+test "$actual" = "$expected"
+docker load -i "$archive"
+rm -f "$archive" "$checksum"
+touch "$done"

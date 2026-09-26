@@ -1,0 +1,71 @@
+name: emonos
+
+services:
+  web:
+    image: emonos-preload/web:20260924
+    pull_policy: never
+    environment: &app_environment
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: emoncms
+      MYSQL_USER: emoncms
+      MYSQL_PASSWORD: change-before-production
+      REDIS_ENABLED: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PREFIX: emoncms
+      REDIS_BUFFER: "1"
+      MQTT_ENABLED: "true"
+      MQTT_HOST: mqtt
+      MQTT_CLIENTID: emonos
+      MQTT_USER: emonpi
+      MQTT_PASSWORD: emonpimqtt2016
+      MQTT_BASETOPIC: emon
+      MQTT_PORT: 1883
+      PHPFINA_DIR: /var/opt/emoncms/phpfina/
+      PHPTIMESERIES_DIR: /var/opt/emoncms/phptimeseries/
+    ports: ["80:80"]
+    volumes:
+      - phpfina:/var/opt/emoncms/phpfina
+      - phptimeseries:/var/opt/emoncms/phptimeseries
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      mqtt: {condition: service_started}
+
+  db:
+    image: emonos-preload/db:20260924
+    pull_policy: never
+    environment:
+      MYSQL_DATABASE: emoncms
+      MYSQL_USER: emoncms
+      MYSQL_PASSWORD: change-before-production
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+      MARIADB_INITDB_SKIP_TZINFO: "1"
+    volumes: ["db:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+
+  redis:
+    image: emonos-preload/redis:20260924
+    pull_policy: never
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  mqtt:
+    image: emonos-preload/mqtt:20260924
+    pull_policy: never
+    command: ["/bin/sh", "-c", "touch /mosquitto/config/passwd && mosquitto_passwd -b /mosquitto/config/passwd emonpi emonpimqtt2016 && exec mosquitto"]
+
+volumes:
+  phpfina:
+  phptimeseries:
+  db:
+  redis:

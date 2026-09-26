@@ -1,0 +1,11 @@
+# Source provenance and target-local names for the EmonOS PoC image set.
+# The source index digest selects the right child manifest on each architecture.
+# docker save/load does not retain source RepoDigests, so Compose uses local_tag.
+web.source=ghcr.io/jeremypoulter/emoncms@sha256:2686f3c0631ecc2e9951a69a6b601beb53547688c03f5013e388f57b786fd099
+web.local_tag=emonos-preload/web:20260924
+db.source=mariadb:11.8-noble@sha256:79d59758afc91b89b120b0a8904d637f5a3b3e1c4900f29b740d6d46c72fef68
+db.local_tag=emonos-preload/db:20260924
+redis.source=redis:8.10-trixie@sha256:718f745deb7dfefeac6eed7041fc7ec9476b50e61b247932682457c41adafa0e
+redis.local_tag=emonos-preload/redis:20260924
+mqtt.source=eclipse-mosquitto:2.0-openssl@sha256:199ea8ef2e35ec2b1b37e59cfd1dbae538ed4dfa4a2251a121a52215a6248a21
+mqtt.local_tag=emonos-preload/mqtt:20260924

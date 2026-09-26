@@ -77,5 +77,7 @@ a non-default Python executable.
 ## Dependencies
 
 Buildroot downloads and builds its own toolchain. The host needs standard build tools,
-Python 3, QEMU/KVM, and enough disk space for Buildroot output. See
+Python 3, Docker, QEMU/KVM, and enough disk space for Buildroot output. WP3 builds pull the
+pinned application images and embed an approximately 1.2 GB Docker archive in the writable
+development root, so allow at least 8 GB of free build-output space per target. See
 `Docs/emonos-poc-implementation-plan.md` for the full PoC scope and prerequisites.
