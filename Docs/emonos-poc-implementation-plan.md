@@ -648,6 +648,16 @@ php-mosquitto then passed through `emoncms_mqtt`, the Redis buffer and `feedwrit
 
 ### WP4 — A/B layout, read-only root, data partition (~1–2 weeks) → **T2, T3**
 
+**Work in progress (2026-09-27):** the data-image build hook and systemd mounts
+are staged, with one `emonos-data` ext4 filesystem. Docker state is under
+`/mnt/data/docker`; MariaDB, PHPFina, PHPTimeSeries and Redis use separate
+bind-mounted directories under `/mnt/data/emoncms/` and `/mnt/data/redis/`,
+outside Docker's managed volumes. These changes are **not yet bootable**: the
+board genimage layouts still contain only boot and a single ext4 root, so the
+data filesystem is not installed in the disk image. Do not flash these
+intermediate outputs. The A/B partition layout and read-only boot path below
+must be completed and tested first.
+
 1. `genimage/partitions-os.cfg` — the seven partitions of D5/F2, sizes from `meta` +
    `hdd-image.sh`. `kernel.img` built as a squashfs (F6).
 2. `BR2_TARGET_ROOTFS_SQUASHFS` + zstd; drop ext2.

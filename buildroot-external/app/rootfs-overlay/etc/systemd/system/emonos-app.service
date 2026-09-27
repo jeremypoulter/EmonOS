@@ -2,6 +2,7 @@
 Description=EmonOS application stack
 Requires=docker.service
 After=docker.service emonos-preload.service
+RequiresMountsFor=/mnt/data
 
 [Service]
 Type=oneshot

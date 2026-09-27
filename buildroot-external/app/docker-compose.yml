@@ -4,7 +4,7 @@ services:
   web:
     image: emonos-preload/web:20260924
     pull_policy: never
-    environment: &app_environment
+    environment:
       MYSQL_HOST: db
       MYSQL_PORT: 3306
       MYSQL_DATABASE: emoncms
@@ -26,8 +26,8 @@ services:
       PHPTIMESERIES_DIR: /var/opt/emoncms/phptimeseries/
     ports: ["80:80"]
     volumes:
-      - phpfina:/var/opt/emoncms/phpfina
-      - phptimeseries:/var/opt/emoncms/phptimeseries
+      - /mnt/data/emoncms/phpfina:/var/opt/emoncms/phpfina
+      - /mnt/data/emoncms/phptimeseries:/var/opt/emoncms/phptimeseries
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -42,7 +42,7 @@ services:
       MYSQL_PASSWORD: change-before-production
       MYSQL_RANDOM_ROOT_PASSWORD: "yes"
       MARIADB_INITDB_SKIP_TZINFO: "1"
-    volumes: ["db:/var/lib/mysql"]
+    volumes: ["/mnt/data/emoncms/db:/var/lib/mysql"]
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 3s
@@ -52,7 +52,7 @@ services:
   redis:
     image: emonos-preload/redis:20260924
     pull_policy: never
-    volumes: ["redis:/data"]
+    volumes: ["/mnt/data/redis:/data"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
@@ -63,9 +63,3 @@ services:
     image: emonos-preload/mqtt:20260924
     pull_policy: never
     command: ["/bin/sh", "-c", "touch /mosquitto/config/passwd && mosquitto_passwd -b /mosquitto/config/passwd emonpi emonpimqtt2016 && exec mosquitto"]
-
-volumes:
-  phpfina:
-  phptimeseries:
-  db:
-  redis:

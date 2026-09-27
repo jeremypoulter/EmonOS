@@ -1,10 +1,10 @@
 #!/bin/sh
 set -eu
 
-preload=/opt/emonos/preload
+preload=/mnt/data/preload
 archive="$preload/images.tar"
 checksum="$preload/images.tar.sha256"
-done=/var/lib/emonos/preload.done
+done=/mnt/data/.preload.done
 
 mkdir -p "$(dirname "$done")"
 test -f "$archive"

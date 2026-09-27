@@ -1,0 +1,14 @@
+[Unit]
+Description=EmonOS persistent data partition
+Before=local-fs.target docker.service emonos-preload.service
+After=systemd-fsck@dev-disk-by\x2dlabel-emonos\x2ddata.service
+Wants=systemd-fsck@dev-disk-by\x2dlabel-emonos\x2ddata.service
+
+[Mount]
+What=/dev/disk/by-label/emonos-data
+Where=/mnt/data
+Type=ext4
+Options=noatime,errors=remount-ro
+
+[Install]
+WantedBy=local-fs.target
