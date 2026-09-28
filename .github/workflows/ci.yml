@@ -45,7 +45,10 @@ jobs:
     name: Build and test x86-64 VM
     needs: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    # A clean Buildroot toolchain + EDK2 + Go/Docker build took more than 75
+    # minutes on the standard GitHub runner. Keep the test bounded, but allow
+    # the cold build to finish before judging performance/cost.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
         with:
@@ -72,6 +75,21 @@ jobs:
 
       - name: Install Python test dependencies
         run: python -m pip install --requirement tests/requirements.txt
+
+      - name: Reclaim unused SDK space and check disk budget
+        run: |
+          df -h .
+          # This is an ephemeral GitHub-hosted runner. None of these SDKs are
+          # needed for Buildroot; keep setup-python's toolcache intact.
+          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h .
+          # Local clean Buildroot output is ~28 GiB. Fail before an expensive
+          # build if the runner image no longer leaves enough headroom.
+          available=$(df --output=avail -B1 . | tail -1)
+          if test "$available" -lt $((32 * 1024 * 1024 * 1024)); then
+            echo 'EmonOS requires at least 32 GiB free for a clean Buildroot build.' >&2
+            exit 1
+          fi
 
       - name: Build x86-64 VM image
         run: make emonos_x86_64_vm
