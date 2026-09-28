@@ -57,7 +57,12 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
     assert command.run_check("uname -s") == ["Linux"]
     assert command.run_check("uname -m") == [expected_architecture]
     assert command.run_check("hostname") == ["emonos"]
-    command.run_check("test -z \"$(systemctl --failed --no-legend --plain)\"")
+    failed = command.run_check("systemctl --failed --no-pager --no-legend --plain || true")
+    if failed:
+        logs = command.run_check("journalctl --no-pager -u emonos-app.service -n 35 || true")
+        db_logs = command.run_check("docker logs emonos-db-1 2>&1 | head -85 || true")
+        disk = command.run_check("df -h /mnt/data /var/lib/docker || true")
+        pytest.fail("failed units: " + "\n".join([*failed, *logs, *db_logs, *disk]))
 
     controllers = set(command.run_check("cat /sys/fs/cgroup/cgroup.controllers")[0].split())
     assert REQUIRED_CGROUP_CONTROLLERS <= controllers
@@ -74,11 +79,17 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
 @pytest.mark.timeout(900)
 def test_app_stack(command) -> None:
     """WP3: first boot loads the archive and starts the offline application stack."""
-    assert command.poll_until_success(
+    if not command.poll_until_success(
         "systemctl is-active --quiet emonos-app.service", tries=180, timeout=360.0, sleepduration=2
-    )
-    command.run_check("test ! -e /opt/emonos/preload/images.tar")
-    command.run_check("test ! -e /opt/emonos/preload/images.tar.sha256")
+    ):
+        diagnostics = command.run_check(
+            "SYSTEMD_PAGER=cat systemctl status --no-pager -l emonos-app.service "
+            "emonos-preload.service mnt-data.mount var-lib-docker.mount || true"
+        )
+        logs = command.run_check("journalctl --no-pager -u emonos-app.service -n 30 || true")
+        pytest.fail("app did not start: " + "\n".join([*diagnostics, *logs]))
+    command.run_check("test ! -e /mnt/data/preload/images.tar")
+    command.run_check("test ! -e /mnt/data/preload/images.tar.sha256")
     services = command.run_check(
         "docker compose -f /opt/emonos/docker-compose.yml ps --status running --format '{{.Service}}'"
     )
@@ -86,7 +97,65 @@ def test_app_stack(command) -> None:
     assert command.run_check("curl -fsS --max-time 10 http://127.0.0.1/ >/dev/null") == []
 
     # This script runs in the guest, avoiding host-side HTTP/DNS assumptions.
-    command.run_check("/usr/libexec/emonos-app-check", timeout=120)
+    test_user = os.environ.get("EMONOS_APP_TEST_USER", "")
+    command.run_check(
+        f"EMONOS_APP_TEST_USER={test_user} /usr/libexec/emonos-app-check", timeout=120
+    )
+
+
+@pytest.mark.timeout(600)
+def test_ab_layout(command) -> None:
+    """WP4: both targets boot slot A with read-only system and persistent data."""
+    command.run_check("grep -q ' / squashfs ro,' /proc/mounts")
+    command.run_check("grep -q ' /var tmpfs ' /proc/mounts")
+    mounts = command.run_check("grep -E ' / | /var | /mnt/data | /var/lib/docker ' /proc/mounts")
+    if not any(" /mnt/data ext4 " in mount for mount in mounts):
+        status = command.run_check(
+            "SYSTEMD_PAGER=cat systemctl status --no-pager mnt-data.mount "
+            "emonos-first-boot.service var-lib-docker.mount || true"
+        )
+        pytest.fail("data mount missing: " + "\n".join([*mounts, *status]))
+    command.run_check("grep -q ' /var/lib/docker ' /proc/mounts")
+    command.run_check("test -d /mnt/data/emoncms/db")
+    command.run_check("test -d /mnt/data/emoncms/phpfina")
+    command.run_check("test -d /mnt/data/redis")
+    assert command.poll_until_success(
+        "test -f /mnt/data/.preload.done", tries=150, timeout=600.0, sleepduration=4
+    )
+    assert command.run_check("cat /sys/class/block/*/partition | wc -l") == ["7"]
+
+
+@pytest.mark.timeout(900)
+def test_feed_survives_reboot(command, target) -> None:
+    """T3: a PHPFina feed stays on the data partition across a slot-A reboot."""
+    if os.environ.get("EMONOS_RUN_REBOOT_TEST") != "1":
+        pytest.skip("set EMONOS_RUN_REBOOT_TEST=1 to exercise a guest reboot")
+
+    assert command.poll_until_success(
+        "systemctl is-active --quiet emonos-app.service",
+        tries=150, timeout=600.0, sleepduration=4,
+    )
+    test_user = os.environ.get("EMONOS_APP_TEST_USER", "")
+    command.run_check(
+        f"EMONOS_APP_TEST_USER={test_user} /usr/libexec/emonos-app-check", timeout=120
+    )
+    feed = command.run_check("find /mnt/data/emoncms/phpfina -name '*.dat' | head -1")[0]
+    assert feed
+    original = command.run_check(f"sha256sum {feed}")[0]
+    command.run_check("sync")
+    command.console.sendline("systemctl reboot")
+    target.deactivate(command)
+    # Do not reactivate against the *old* shell prompt before shutdown starts.
+    # Wait for a new login prompt, then log in and let ShellDriver reinject run().
+    command.console.expect("emonos login: ", timeout=180)
+    command.console.sendline("root")
+    target.activate(command)
+    assert command.poll_until_success(
+        "systemctl is-active --quiet emonos-app.service",
+        tries=90, timeout=360.0, sleepduration=4,
+    )
+    assert command.run_check(f"sha256sum {feed}") == [original]
+    command.run_check("test -f /mnt/data/.preload.done")
 
 
 @pytest.mark.timeout(1200)
@@ -94,6 +163,8 @@ def test_offline_preload(command, target_name: str) -> None:
     """D11/R5: a clean store can start locally tagged preloaded images offline."""
     if os.environ.get("EMONOS_RUN_PRELOAD_TEST") != "1":
         pytest.skip("set EMONOS_RUN_PRELOAD_TEST=1 to run the slow preload test")
+    if command.run_check("awk '$2 == \"/\" {print $3}' /proc/mounts") == ["squashfs"]:
+        pytest.skip("WP4 boots with the preload already installed on the data partition")
     if target_name != "x86-64-vm":
         pytest.skip("the Pi preload test is recorded in the implementation plan")
 

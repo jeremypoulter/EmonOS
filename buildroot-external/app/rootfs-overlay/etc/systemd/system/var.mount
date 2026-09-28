@@ -1,0 +1,12 @@
+[Unit]
+Description=Volatile runtime state
+Before=local-fs.target
+
+[Mount]
+What=tmpfs
+Where=/var
+Type=tmpfs
+Options=mode=0755,size=128M
+
+[Install]
+WantedBy=local-fs.target

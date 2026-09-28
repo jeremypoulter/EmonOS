@@ -18,9 +18,3 @@ image emonos-rpi4.img {
         bootable = "true"
         image = "boot.vfat"
     }
-
-    partition rootfs {
-        partition-type = 0x83
-        image = "rootfs.ext4"
-    }
-}

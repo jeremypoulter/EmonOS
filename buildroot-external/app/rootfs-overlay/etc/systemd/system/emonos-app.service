@@ -1,6 +1,6 @@
 [Unit]
 Description=EmonOS application stack
-Requires=docker.service
+Requires=docker.service emonos-preload.service
 After=docker.service emonos-preload.service
 RequiresMountsFor=/mnt/data
 

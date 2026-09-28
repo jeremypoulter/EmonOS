@@ -1,6 +1,24 @@
-set default="0"
-set timeout="0"
+set timeout=1
+set default=0
 
-menuentry "EmonOS development" {
-    linux /bzImage root=PARTUUID=%ROOT_UUID% rootwait rw console=ttyS0,115200 loglevel=3
+set ORDER="A B"
+set A_OK=1
+set B_OK=0
+set B_TRY=0
+load_env -f (hd0,gpt1)/EFI/BOOT/grubenv
+
+# B gets one trial boot. A remains the known-good fallback until a health
+# service commits B (WP7). A failure to read grubenv defaults to A.
+if [ "$B_OK" = 1 -a "$B_TRY" = 0 ]; then
+    set default=1
+    set B_TRY=1
+    save_env -f (hd0,gpt1)/EFI/BOOT/grubenv B_TRY
+fi
+
+menuentry "EmonOS slot A" {
+    linux (hd0,gpt2)/bzImage root=PARTUUID=8d3d53e3-6d49-4c38-8349-aff6859e82fd rootfstype=squashfs rootwait ro console=ttyS0,115200 loglevel=3 rauc.slot=A
+}
+
+menuentry "EmonOS slot B" {
+    linux (hd0,gpt4)/bzImage root=PARTUUID=a3ec664e-32ce-4665-95ea-7ae90ce9aa20 rootfstype=squashfs rootwait ro console=ttyS0,115200 loglevel=3 rauc.slot=B
 }

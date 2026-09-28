@@ -1,7 +1,7 @@
 [Unit]
 Description=EmonOS Docker data bind mount
-Requires=mnt-data.mount
-After=mnt-data.mount
+Requires=mnt-data.mount emonos-first-boot.service
+After=mnt-data.mount emonos-first-boot.service
 Before=docker.service
 
 [Mount]

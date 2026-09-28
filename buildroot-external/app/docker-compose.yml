@@ -14,7 +14,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PREFIX: emoncms
-      REDIS_BUFFER: "1"
+      REDIS_BUFFER: "0"
       MQTT_ENABLED: "true"
       MQTT_HOST: mqtt
       MQTT_CLIENTID: emonos

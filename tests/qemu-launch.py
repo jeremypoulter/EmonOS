@@ -6,6 +6,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -22,7 +23,7 @@ def available_memory_mb() -> int:
     raise RuntimeError("MemAvailable is missing from /proc/meminfo")
 
 
-def replace_virtio_drive(arguments: list[str]) -> list[str]:
+def replace_virtio_drive(arguments: list[str], overlay_path: str | None = None) -> list[str]:
     result: list[str] = []
     index = 0
     while index < len(arguments):
@@ -32,12 +33,14 @@ def replace_virtio_drive(arguments: list[str]) -> list[str]:
             )
             if options.get("if") == "virtio" and "file" in options:
                 aio = options.get("aio", "threads")
+                filename = overlay_path or options["file"]
+                disk_format = "qcow2" if overlay_path else options.get("format", "raw")
                 result.extend(
                     [
                         "-blockdev",
-                        f"driver=file,filename={options['file']},aio={aio},node-name=vmfile",
+                        f"driver=file,filename={filename},aio={aio},node-name=vmfile",
                         "-blockdev",
-                        f"driver={options.get('format', 'raw')},file=vmfile,node-name=vmdisk",
+                        f"driver={disk_format},file=vmfile,node-name=vmdisk",
                         "-device",
                         "virtio-blk-pci,drive=vmdisk",
                     ]
@@ -107,27 +110,39 @@ def main() -> int:
         )
         return 1
 
-    command = [qemu, *replace_virtio_drive(arguments)]
-    if os.environ.get("EMONOS_QEMU_DISABLE_IO_URING") == "1":
-        command = [
-            "strace",
-            "-f",
-            "-qq",
-            "-e",
-            "trace=io_uring_setup",
-            "-e",
-            "inject=io_uring_setup:error=EPERM",
-            *command,
-        ]
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        returncode, stderr = run_once(command)
-        if returncode == 0:
-            return returncode
-        if IO_URING_ERROR not in stderr or attempt == MAX_ATTEMPTS:
-            unblock_serial_accept(arguments)
-            return returncode
-        print(f"retrying QEMU after io_uring failure ({attempt}/{MAX_ATTEMPTS})", file=sys.stderr)
-        time.sleep(attempt)
+    with tempfile.TemporaryDirectory(prefix="emonos-qemu-", dir="/tmp/opencode") as tmpdir:
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            overlay = f"{tmpdir}/disk.qcow2"
+            for index, argument in enumerate(arguments[:-1]):
+                if argument != "-drive":
+                    continue
+                options = dict(
+                    field.split("=", 1) for field in arguments[index + 1].split(",") if "=" in field
+                )
+                if options.get("if") == "virtio" and "file" in options:
+                    subprocess.run(
+                        ["qemu-img", "create", "-q", "-f", "qcow2", "-F", "raw", "-b",
+                         options["file"], overlay], check=True
+                    )
+                    break
+            else:
+                raise RuntimeError("no virtio disk to protect with a qcow2 overlay")
+
+            command = [qemu, *replace_virtio_drive(arguments, overlay)]
+            if os.environ.get("EMONOS_QEMU_DISABLE_IO_URING") == "1":
+                command = [
+                    "strace", "-f", "-qq", "-e", "trace=io_uring_setup", "-e",
+                    "inject=io_uring_setup:error=EPERM", *command,
+                ]
+            returncode, stderr = run_once(command)
+            if returncode == 0:
+                return returncode
+            if IO_URING_ERROR not in stderr or attempt == MAX_ATTEMPTS:
+                unblock_serial_accept(arguments)
+                return returncode
+            os.unlink(overlay)
+            print(f"retrying QEMU after io_uring failure ({attempt}/{MAX_ATTEMPTS})", file=sys.stderr)
+            time.sleep(attempt)
     return 1
 
 

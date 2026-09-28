@@ -16,6 +16,7 @@ config BR2_EMONOS_RUNTIME
 	select BR2_PACKAGE_DOCKER_ENGINE
 	select BR2_PACKAGE_DOCKER_CLI
 	select BR2_PACKAGE_DOCKER_COMPOSE
+	select BR2_PACKAGE_E2FSPROGS
 	help
 	  Install the common EmonOS container runtime. All EmonOS targets
 	  select this option so VM runtime testing covers the same Docker

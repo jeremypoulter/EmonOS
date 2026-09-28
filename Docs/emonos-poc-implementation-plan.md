@@ -648,15 +648,33 @@ php-mosquitto then passed through `emoncms_mqtt`, the Redis buffer and `feedwrit
 
 ### WP4 — A/B layout, read-only root, data partition (~1–2 weeks) → **T2, T3**
 
-**Work in progress (2026-09-27):** the data-image build hook and systemd mounts
-are staged, with one `emonos-data` ext4 filesystem. Docker state is under
-`/mnt/data/docker`; MariaDB, PHPFina, PHPTimeSeries and Redis use separate
-bind-mounted directories under `/mnt/data/emoncms/` and `/mnt/data/redis/`,
-outside Docker's managed volumes. These changes are **not yet bootable**: the
-board genimage layouts still contain only boot and a single ext4 root, so the
-data filesystem is not installed in the disk image. Do not flash these
-intermediate outputs. The A/B partition layout and read-only boot path below
-must be completed and tested first.
+**Work in progress (2026-09-27):** both boards now assemble the seven-partition
+layout (`boot`, `kernel-a`, `system-a`, `kernel-b`, `system-b`, `bootstate`,
+`data`). Both system slots contain the same zstd squashfs; each kernel slot
+contains a gzip squashfs so U-Boot can read `/Image`. Initial slot sizes are
+32 MiB kernel, 512 MiB system and 6 GiB data. GPT is used on x86; the Pi's
+hybrid GPT/MBR aliases only its FAT boot partition into MBR (hybrid MBR has at
+most three entries). Slot A is seeded bootable in GRUB/U-Boot state; B is
+populated but not yet valid for trials. The x86 image has booted slot A and
+passed the shared runtime and authenticated feed check on a read-only root.
+The x86 gated reboot test also verified that a PHPFina feed survives reboot.
+The Pi image has **not yet been flashed or booted** with this layout.
+
+One `emonos-data` ext4 filesystem holds `/mnt/data/docker`, while MariaDB,
+PHPFina, PHPTimeSeries and Redis use explicit bind mounts under
+`/mnt/data/emoncms/` and `/mnt/data/redis/`, outside Docker-managed volumes.
+`/var` is tmpfs; the data mount is resolved by label before Docker starts.
+The x86 rootfs is ~91 MiB zstd squashfs, well below the provisional 512 MiB
+slot (Pi is ~110 MiB before the latest e2fsprogs addition). The test harness
+now creates a separate temporary qcow2 overlay for each VM run: QEMU's
+`-snapshot` flag did **not** protect a disk attached by `-blockdev` and earlier
+test runs inadvertently modified the source image, corrupting MariaDB.
+Rebuilding the image and protecting it with the overlay restored clean tests.
+
+**Still to do in WP4:** boot and verify the new Pi image (including reboot
+persistence); safely grow the last data partition to fill the installed card;
+persist a device-specific machine ID in boot state (D8); persist SSH host
+keys on the data partition; then freeze slot sizes and mark T2/T3 complete.
 
 1. `genimage/partitions-os.cfg` — the seven partitions of D5/F2, sizes from `meta` +
    `hdd-image.sh`. `kernel.img` built as a squashfs (F6).

@@ -4,11 +4,10 @@ EmonOS is a minimal, immutable host OS for the emoncms container stack.
 
 ## Development status
 
-The repository implements the Buildroot runtime and its shared x86-64 VM / Raspberry Pi 4
-boot harness. Docker and Compose run on both targets; a separate, gated harness test proves
-the four-image emoncms archive can be loaded into a clean store and started offline. A/B
-slots, the persistent data partition, and the emoncms application service are subsequent
-milestones documented in `Docs/`.
+The common runtime and emoncms application stack run on the x86-64 VM and Raspberry Pi 4.
+WP4 is introducing a seven-partition A/B layout, read-only squashfs system slots and a
+persistent data partition. The x86 VM boots the new layout; the Pi build has not yet been
+validated on hardware. See `Docs/emonos-poc-implementation-plan.md` for current status.
 
 ## Build the x86 VM image
 
@@ -27,8 +26,7 @@ make run_x86_64_vm
 The guest uses the serial console. Log in as `root`; the development image has no root
 password.
 
-Docker is available after boot. The current writable-root development image can verify the
-runtime with:
+Docker is available after boot. Verify the runtime with:
 
 ```sh
 docker run --rm hello-world
@@ -45,20 +43,21 @@ python3 -m venv .venv
 tests/run.sh x86-64-vm
 ```
 
-The QEMU launcher checks available memory and retries only the known `io_uring` allocation
-failure. On a development host already under sustained memory pressure, the documented
-process-scoped escape hatch is available without changing host sysctls:
+The test launcher keeps the built disk image unchanged by using a temporary qcow2 overlay,
+checks available memory, and retries only the known `io_uring` allocation failure. On a
+development host already under sustained memory pressure, the process-scoped escape hatch
+is available without changing host sysctls:
 
 ```sh
 EMONOS_QEMU_DISABLE_IO_URING=1 tests/run.sh x86-64-vm
 ```
 
-The archive preload test downloads the application images and requires an 8 GB VM. It is
-excluded from normal runs:
+The historical WP0 archive preload test is skipped on the WP4 squashfs images. To verify
+that a PHPFina feed survives a guest reboot, run the gated test (the normal VM uses 4 GB):
 
 ```sh
-EMONOS_QEMU_MEMORY=8G EMONOS_RUN_PRELOAD_TEST=1 \
-EMONOS_QEMU_DISABLE_IO_URING=1 tests/run.sh x86-64-vm -k offline_preload
+EMONOS_RUN_REBOOT_TEST=1 EMONOS_QEMU_DISABLE_IO_URING=1 \
+tests/run.sh x86-64-vm -k feed_survives_reboot
 ```
 
 The Raspberry Pi uses the same tests over its serial console. Supply the serial device at
@@ -77,7 +76,7 @@ a non-default Python executable.
 ## Dependencies
 
 Buildroot downloads and builds its own toolchain. The host needs standard build tools,
-Python 3, Docker, QEMU/KVM, and enough disk space for Buildroot output. WP3 builds pull the
-pinned application images and embed an approximately 1.2 GB Docker archive in the writable
-development root, so allow at least 8 GB of free build-output space per target. See
+Python 3, Docker, QEMU/KVM, and enough disk space for Buildroot output. The build embeds an
+approximately 1.2 GB Docker archive in a 6 GB data-partition image. Allow at least 20 GB
+of free build-output space per target during image assembly. See
 `Docs/emonos-poc-implementation-plan.md` for the full PoC scope and prerequisites.
