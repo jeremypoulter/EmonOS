@@ -120,10 +120,16 @@ def main() -> int:
                     field.split("=", 1) for field in arguments[index + 1].split(",") if "=" in field
                 )
                 if options.get("if") == "virtio" and "file" in options:
-                    subprocess.run(
-                        ["qemu-img", "create", "-q", "-f", "qcow2", "-F", "raw", "-b",
-                         options["file"], overlay], check=True
-                    )
+                    image_command = [
+                        "qemu-img", "create", "-q", "-f", "qcow2", "-F", "raw", "-b",
+                        options["file"], overlay,
+                    ]
+                    if os.environ.get("EMONOS_QEMU_DISABLE_IO_URING") == "1":
+                        image_command = [
+                            "strace", "-f", "-qq", "-e", "trace=io_uring_setup", "-e",
+                            "inject=io_uring_setup:error=EPERM", *image_command,
+                        ]
+                    subprocess.run(image_command, check=True)
                     break
             else:
                 raise RuntimeError("no virtio disk to protect with a qcow2 overlay")

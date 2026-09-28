@@ -1,0 +1,14 @@
+[Unit]
+Description=Persistent OpenSSH configuration and host keys
+Requires=mnt-data.mount emonos-first-boot.service
+After=mnt-data.mount emonos-first-boot.service
+Before=sshd.service
+
+[Mount]
+What=/mnt/data/ssh
+Where=/etc/ssh
+Type=none
+Options=bind
+
+[Install]
+WantedBy=multi-user.target

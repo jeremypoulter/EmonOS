@@ -43,6 +43,7 @@ ln -sf ../mnt-data.mount "$target_dir/etc/systemd/system/local-fs.target.wants/m
 ln -sf ../var-lib-docker.mount "$target_dir/etc/systemd/system/local-fs.target.wants/var-lib-docker.mount"
 ln -sf ../var.mount "$target_dir/etc/systemd/system/local-fs.target.wants/var.mount"
 ln -sf ../emonos-first-boot.service "$target_dir/etc/systemd/system/local-fs.target.wants/emonos-first-boot.service"
+ln -sf ../etc-ssh.mount "$target_dir/etc/systemd/system/multi-user.target.wants/etc-ssh.mount"
 ln -sf ../emonos-preload.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-preload.service"
 ln -sf ../emonos-app.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-app.service"
 set --

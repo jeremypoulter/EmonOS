@@ -59,7 +59,9 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
     assert command.run_check("hostname") == ["emonos"]
     failed = command.run_check("systemctl --failed --no-pager --no-legend --plain || true")
     if failed:
-        logs = command.run_check("journalctl --no-pager -u emonos-app.service -n 35 || true")
+        logs = command.run_check(
+            "journalctl --no-pager -u emonos-app.service -u sshd.service -n 50 || true"
+        )
         db_logs = command.run_check("docker logs emonos-db-1 2>&1 | head -85 || true")
         disk = command.run_check("df -h /mnt/data /var/lib/docker || true")
         pytest.fail("failed units: " + "\n".join([*failed, *logs, *db_logs, *disk]))

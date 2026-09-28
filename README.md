@@ -73,6 +73,20 @@ EMONOS_PI_SERIAL=/dev/serial/by-path/<usb-port-path> tests/run.sh rpi4
 Set `EMONOS_TEST_PYTHON` when the dependencies are installed in a virtual environment using
 a non-default Python executable.
 
+## SSH development access
+
+OpenSSH host keys are generated on the persistent data partition after first boot, rather
+than in the immutable system slot. Password login is disabled. Add a development public key
+through the serial console, then connect as root using the Pi's DHCP address:
+
+```sh
+mkdir -p /mnt/data/ssh/authorized_keys
+cat >> /mnt/data/ssh/authorized_keys/root
+# paste one public key, press Enter, then Ctrl-D
+chmod 600 /mnt/data/ssh/authorized_keys/root
+systemctl restart sshd
+```
+
 ## Dependencies
 
 Buildroot downloads and builds its own toolchain. The host needs standard build tools,

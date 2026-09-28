@@ -3,13 +3,27 @@ set -eu
 
 mountpoint -q /mnt/data
 mountpoint -q /var
-mkdir -p /var/lib/docker /var/log /var/cache /var/tmp /var/spool \
+mkdir -p /var/empty /var/lib/docker /var/log /var/cache /var/tmp /var/spool \
     /mnt/data/docker /mnt/data/emoncms/db /mnt/data/emoncms/phpfina \
-    /mnt/data/emoncms/phptimeseries /mnt/data/redis
+    /mnt/data/emoncms/phptimeseries /mnt/data/redis /mnt/data/ssh
 chmod 1777 /var/tmp
+chmod 755 /var/empty
 # The data image is created without root privileges on the build host, so its
 # empty directory owners are not the container users. Only change the mount
 # roots; never recursively change ownership of existing feed/database data.
 chown 33:33 /mnt/data/emoncms/phpfina /mnt/data/emoncms/phptimeseries
 chown 999:999 /mnt/data/redis
+if [ ! -f /mnt/data/ssh/sshd_config ]; then
+    cp -a /etc/ssh/. /mnt/data/ssh/
+    cat >> /mnt/data/ssh/sshd_config <<'EOF'
+
+# EmonOS: host keys and developer authorized keys reside on the data partition.
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthorizedKeysFile /mnt/data/ssh/authorized_keys/%u
+EOF
+fi
+mkdir -p /mnt/data/ssh/authorized_keys
+chmod 700 /mnt/data/ssh /mnt/data/ssh/authorized_keys
 touch /mnt/data/.provisioned
