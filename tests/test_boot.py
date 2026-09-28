@@ -96,7 +96,12 @@ def test_app_stack(command) -> None:
         "docker compose -f /opt/emonos/docker-compose.yml ps --status running --format '{{.Service}}'"
     )
     assert set(services) == {"web", "db", "redis", "mqtt"}
-    assert command.run_check("curl -fsS --max-time 10 http://127.0.0.1/ >/dev/null") == []
+    assert command.poll_until_success(
+        "curl -fsS --max-time 10 http://127.0.0.1/ >/dev/null",
+        tries=30,
+        timeout=90.0,
+        sleepduration=3,
+    )
 
     # This script runs in the guest, avoiding host-side HTTP/DNS assumptions.
     test_user = os.environ.get("EMONOS_APP_TEST_USER", "")

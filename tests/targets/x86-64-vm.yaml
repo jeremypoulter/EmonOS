@@ -12,9 +12,9 @@ targets:
       QEMUDriver:
         qemu_bin: qemu
         machine: q35
-        cpu: host
+        cpu: !template "$LG_QEMU_CPU"
         memory: !template "$LG_QEMU_MEMORY"
-        extra_args: "-accel kvm -snapshot"
+        extra_args: !template "$LG_QEMU_EXTRA_ARGS"
         disk: disk
         disk_opts: "aio=threads"
         bios: bios
