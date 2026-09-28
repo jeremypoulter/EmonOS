@@ -37,7 +37,9 @@ jobs:
         run: python3 -m py_compile tests/*.py
 
       - name: Check whitespace
-        run: git diff --check HEAD^
+        # checkout uses a shallow single-commit clone by default, so HEAD^ is
+        # intentionally unavailable. git show checks this commit directly.
+        run: git show --check --format= HEAD
 
   build-and-test-x86:
     name: Build and test x86-64 VM
