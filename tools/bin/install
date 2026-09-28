@@ -1,2 +1,2 @@
 #!/bin/sh
-exec /usr/bin/gnuinstall "$@"
+exec /usr/bin/install "$@"

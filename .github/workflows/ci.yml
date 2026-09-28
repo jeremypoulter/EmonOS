@@ -90,9 +90,13 @@ jobs:
         if: always()
         run: |
           mkdir -p ci-artifacts
-          sha256sum output/x86-64-vm/images/emonos-x86-64-vm.img > ci-artifacts/image.sha256
-          sfdisk -d output/x86-64-vm/images/emonos-x86-64-vm.img > ci-artifacts/partitions.sfdisk
-          cp output/x86-64-vm/.config ci-artifacts/buildroot.config
+          if test -f output/x86-64-vm/images/emonos-x86-64-vm.img; then
+            sha256sum output/x86-64-vm/images/emonos-x86-64-vm.img > ci-artifacts/image.sha256
+            sfdisk -d output/x86-64-vm/images/emonos-x86-64-vm.img > ci-artifacts/partitions.sfdisk
+          fi
+          if test -f output/x86-64-vm/.config; then
+            cp output/x86-64-vm/.config ci-artifacts/buildroot.config
+          fi
 
       - name: Upload build evidence
         if: always()
