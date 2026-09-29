@@ -847,9 +847,19 @@ Beyond PoC spec §12, and stated so the plan is not over-read:
 - **Hardware-in-the-loop CI is not yet configured.** The initial GitHub workflow now lints,
   builds and tests x86 under TCG; a manual input builds x86 and Pi images on separate
   runners in parallel. The Pi still needs manual flashing and serial testing. A cold hosted
-  x86 build took about 94 minutes; the first completed build failed only because the QEMU
-  launcher assumed `/tmp/opencode` existed on a clean runner. The portable temp-dir fix and
-  its host-side regression test are awaiting the next CI run.
+  x86 build took about 94 minutes; the first completed build failed because the QEMU launcher
+  assumed a developer-specific temporary directory existed on a clean runner. The next
+  hosted build completed, but the TCG app test timed out while MariaDB was still initializing;
+  the bounded app-start window is being extended and database logs captured on failure.
+  The launcher now uses Python's standard temporary-directory selection. CI pins the
+  latest released actions by commit SHA and verifies a second image assembly yields the
+  same SHA-256 on that runner. The pinned Buildroot commit supplies SOURCE_DATE_EPOCH;
+  timezone, filesystem IDs, FAT volume IDs and staged ownership are normalized. Docker's
+  export is canonicalized (tar headers plus both OCI and Docker manifest ordering), as
+  repeated saves of the same images otherwise produced different tars. Consecutive local
+  x86 and Pi image assemblies yielded matching whole-disk SHA-256 hashes at fixed output
+  paths. This establishes same-path repeatability, **not** byte identity across different
+  checkout paths or host toolchains (Buildroot's reproducible mode is experimental there).
 - **Whether the U-Boot A/B path works anywhere but on the bench.** With `rpi4-qemu` dropped
   (D14), `bootloader=uboot`, the raw bootstate environment, the attempt counter and the hybrid
   MBR table are demonstrated on one physical Pi 4 and nowhere else. The PoC will show that

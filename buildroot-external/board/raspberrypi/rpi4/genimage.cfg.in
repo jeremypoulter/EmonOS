@@ -1,5 +1,6 @@
 image boot.vfat {
     vfat {
+        extraargs = "-i 454d4f50"
         files = {
 #BOOT_FILES#
         }
@@ -11,10 +12,12 @@ image boot.vfat {
 image emonos-rpi4.img {
     hdimage {
         partition-table-type = "hybrid"
+        disk-uuid = "ef56caa8-363d-45f4-85cf-c0485e6dd54e"
     }
 
     partition boot {
         partition-type = 0xC
         bootable = "true"
         image = "boot.vfat"
+        partition-uuid = "99d4e32b-482f-49bf-9ea2-3d44803a762c"
     }

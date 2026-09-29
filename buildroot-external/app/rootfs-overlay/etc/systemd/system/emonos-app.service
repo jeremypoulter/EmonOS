@@ -7,10 +7,10 @@ RequiresMountsFor=/mnt/data
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/emonos
-ExecStart=/usr/bin/docker compose -f /opt/emonos/docker-compose.yml up -d --wait --wait-timeout 300
+ExecStart=/usr/bin/docker compose -f /opt/emonos/docker-compose.yml up -d --wait --wait-timeout 840
 ExecStop=/usr/bin/docker compose -f /opt/emonos/docker-compose.yml down
 RemainAfterExit=yes
-TimeoutStartSec=330
+TimeoutStartSec=900
 TimeoutStopSec=120
 
 [Install]

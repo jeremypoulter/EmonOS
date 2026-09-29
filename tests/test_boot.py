@@ -78,18 +78,19 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
     assert "Hello from Docker!" in output
 
 
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(1200)
 def test_app_stack(command) -> None:
     """WP3: first boot loads the archive and starts the offline application stack."""
     if not command.poll_until_success(
-        "systemctl is-active --quiet emonos-app.service", tries=180, timeout=360.0, sleepduration=2
+        "systemctl is-active --quiet emonos-app.service", tries=225, timeout=900.0, sleepduration=4
     ):
         diagnostics = command.run_check(
             "SYSTEMD_PAGER=cat systemctl status --no-pager -l emonos-app.service "
             "emonos-preload.service mnt-data.mount var-lib-docker.mount || true"
         )
         logs = command.run_check("journalctl --no-pager -u emonos-app.service -n 30 || true")
-        pytest.fail("app did not start: " + "\n".join([*diagnostics, *logs]))
+        db_logs = command.run_check("docker logs emonos-db-1 2>&1 | tail -30 || true")
+        pytest.fail("app did not start: " + "\n".join([*diagnostics, *logs, *db_logs]))
     command.run_check("test ! -e /mnt/data/preload/images.tar")
     command.run_check("test ! -e /mnt/data/preload/images.tar.sha256")
     services = command.run_check(

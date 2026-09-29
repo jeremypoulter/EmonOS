@@ -2,6 +2,10 @@ BUILDROOT_DIR := $(CURDIR)/buildroot
 EXTERNAL_DIR := $(CURDIR)/buildroot-external
 OUTPUT_BASE ?= $(CURDIR)/output
 HOST_TOOLS := $(CURDIR)/tools/bin
+# Buildroot's pinned commit is the common source epoch on every build host.
+# A caller may override SOURCE_DATE_EPOCH to reproduce an older artifact.
+export SOURCE_DATE_EPOCH ?= $(shell git -C $(BUILDROOT_DIR) log -1 --format=%ct)
+export TZ := UTC
 
 X86_OUTPUT := $(OUTPUT_BASE)/x86-64-vm
 RPI4_OUTPUT := $(OUTPUT_BASE)/rpi4

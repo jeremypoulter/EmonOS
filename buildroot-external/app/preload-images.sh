@@ -1,8 +1,10 @@
 #!/bin/sh
 # Buildroot post-build hook: save locked target images into the data image.
 set -eu
+umask 022
 
 target_dir=${1:?Buildroot did not pass TARGET_DIR}
+: "${SOURCE_DATE_EPOCH:?set a deterministic SOURCE_DATE_EPOCH (the top-level Makefile does this)}"
 external_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 lock_file="$external_dir/app/images.lock"
 data_stage="$BUILD_DIR/emonos-data"
@@ -61,11 +63,29 @@ for service in web db redis mqtt; do
 done
 
 archive="$data_stage/preload/images.tar"
-docker save -o "$archive" "$@"
+raw_archive="$data_stage/preload/images.raw.tar"
+docker save -o "$raw_archive" "$@"
+python3 "$external_dir/app/canonicalize-docker-archive.py" \
+    "$raw_archive" "$archive" "$SOURCE_DATE_EPOCH"
+rm -f "$raw_archive"
 sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+
+# mke2fs copies inode timestamps from the staging tree. Keep the whole tree
+# at the pinned source epoch, including the generated Docker archive.
+find "$data_stage" -depth -print0 | xargs -0 -r touch -h -d "@$SOURCE_DATE_EPOCH"
 
 # WP4's data partition is deliberately a fixed initial size. It is the final
 # partition and emonos-first-boot will grow it to the device's remaining space.
 rm -f "$data_image"
 truncate -s 6G "$data_image"
-mkfs.ext4 -q -F -L emonos-data -d "$data_stage" "$data_image"
+# The stage is owned by the build user. fakeroot makes the ext4 inode owners
+# root on every host without chowning the actual host files. Use Buildroot's
+# pinned mke2fs and libraries rather than the runner's mutable system copy.
+# shellcheck disable=SC2016 # Positional arguments expand in the inner sh.
+E2FSPROGS_FAKE_TIME="$SOURCE_DATE_EPOCH" "$HOST_DIR/bin/fakeroot" -- sh -c '
+    chown -R 0:0 "$1"
+    exec "$3" -q -F -L emonos-data \
+        -U 8b3f7261-7995-4eac-b12e-8e7356827661 \
+        -E hash_seed=8b3f7261-7995-4eac-b12e-8e7356827661,lazy_itable_init=0,lazy_journal_init=0 \
+        -d "$1" "$2"
+' sh "$data_stage" "$data_image" "$HOST_DIR/sbin/mkfs.ext4"

@@ -68,6 +68,12 @@ do not provide KVM). A clean Buildroot toolchain takes about 94 minutes on
 that runner. The build needs at least 32 GiB free; CI removes unused SDKs
 from its disposable runner before checking capacity. It uploads checksums,
 the partition table and Buildroot configuration, not the raw disk image.
+Buildroot, container sources, action versions and Python are pinned. CI rebuilds
+each image on the same runner and requires an identical SHA-256 before testing.
+The build uses a fixed source epoch, UTC, stable partition/filesystem IDs and
+root-owned data staging; it does not require any development-harness directory.
+Buildroot's experimental reproducible mode only claims byte-identical output
+for the same absolute output path. Cross-host byte identity is not assumed.
 
 Use the workflow's manual **build_rpi4** input to build the x86 and Pi images
 in parallel on separate hosted runners. The Pi image is not tested in CI:

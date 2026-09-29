@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+umask 022
 
 BOARD_DIR=$(dirname "$0")
 EXTERNAL_DIR=$(CDPATH='' cd -- "${BOARD_DIR}/../../.." && pwd)
@@ -26,6 +27,11 @@ printf '%s\n' 'console=ttyS0,115200 earlycon=bcm2835aux,mmio32,0xfe215040 8250.n
 
 "${BUILD_DIR}/uboot-2026.01/tools/mkimage" -A arm64 -T script -C none \
     -d "${BOARD_DIR}/boot.cmd" "${BINARIES_DIR}/boot.scr"
+
+for name in "${files[@]}"; do
+    find "${BINARIES_DIR}/${name}" -depth -print0 |
+        xargs -0 -r touch -h -d "@$SOURCE_DATE_EPOCH"
+done
 
 while IFS= read -r line; do
     if [ "$line" = "#BOOT_FILES#" ]; then

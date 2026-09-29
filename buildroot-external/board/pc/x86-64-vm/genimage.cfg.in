@@ -1,5 +1,6 @@
 image efi-part.vfat {
     vfat {
+        extraargs = "-i 454d4f4e"
         file EFI {
             image = "efi-part/EFI"
         }
@@ -12,6 +13,7 @@ image efi-part.vfat {
 image emonos-x86-64-vm.img {
     hdimage {
         partition-table-type = "gpt"
+        disk-uuid = "21b1e8d7-ea87-4f4f-9f90-bcae1d68c371"
     }
 
     partition boot {
@@ -19,4 +21,5 @@ image emonos-x86-64-vm.img {
         partition-type-uuid = U
         offset = 32K
         bootable = true
+        partition-uuid = "6e01872c-36a1-4ef3-9fb6-93c7609442e7"
     }

@@ -21,9 +21,9 @@ concurrency:
 jobs:
   lint:
     name: Lint and validate configuration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
@@ -39,7 +39,15 @@ jobs:
         run: docker compose -f buildroot-external/app/docker-compose.yml config --quiet
 
       - name: Compile Python test harness
-        run: python3 -m py_compile tests/*.py
+        run: python3 -m py_compile tests/*.py buildroot-external/app/*.py
+
+      - name: Reject developer-specific build paths
+        run: |
+          pattern='open''code|CLAUDE''_JOB_DIR'
+          if git grep -inE "$pattern" -- .github tests buildroot-external Makefile; then
+            echo 'Build and test paths must not depend on a developer harness.' >&2
+            exit 1
+          fi
 
       - name: Check whitespace
         # checkout uses a shallow single-commit clone by default, so HEAD^ is
@@ -49,7 +57,7 @@ jobs:
   build:
     name: Build ${{ matrix.target }}${{ matrix.target == 'x86-64-vm' && ' and test' || '' }}
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -62,17 +70,17 @@ jobs:
     # the cold build to finish before judging performance/cost.
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.14'
+          python-version: '3.14.7'
 
       - name: Cache Buildroot downloads
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: buildroot/dl
           key: buildroot-dl-${{ runner.os }}-${{ hashFiles('buildroot-external/**', 'Makefile') }}
@@ -91,7 +99,7 @@ jobs:
 
       - name: Test QEMU launcher on a clean runner
         if: matrix.target == 'x86-64-vm'
-        run: python -m pytest -q tests/test_qemu_launcher.py
+        run: python -m pytest -q tests/test_qemu_launcher.py tests/test_docker_archive.py
 
       - name: Reclaim unused SDK space and check disk budget
         run: |
@@ -114,6 +122,18 @@ jobs:
             x86-64-vm) make emonos_x86_64_vm ;;
             rpi4) make emonos_rpi4 ;;
           esac
+
+      - name: Verify deterministic image assembly
+        run: |
+          image='output/${{ matrix.target }}/images/emonos-${{ matrix.target }}.img'
+          before=$(sha256sum "$image" | cut -d' ' -f1)
+          case '${{ matrix.target }}' in
+            x86-64-vm) make emonos_x86_64_vm ;;
+            rpi4) make emonos_rpi4 ;;
+          esac
+          after=$(sha256sum "$image" | cut -d' ' -f1)
+          printf 'initial=%s\nrebuilt=%s\n' "$before" "$after" > image-reproducibility.txt
+          test "$before" = "$after"
 
       - name: Test x86-64 VM under TCG
         if: matrix.target == 'x86-64-vm'
@@ -138,10 +158,13 @@ jobs:
           if test -f 'output/${{ matrix.target }}/.config'; then
             cp 'output/${{ matrix.target }}/.config' ci-artifacts/buildroot.config
           fi
+          if test -f image-reproducibility.txt; then
+            cp image-reproducibility.txt ci-artifacts/image-reproducibility.txt
+          fi
 
       - name: Upload build evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.target }}-${{ github.sha }}
           path: ci-artifacts/
