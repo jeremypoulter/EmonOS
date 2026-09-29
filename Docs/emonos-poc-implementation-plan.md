@@ -844,8 +844,12 @@ Beyond PoC spec §12, and stated so the plan is not over-read:
 - **Nothing about `[OPEN-1]`.** Pi 4 is used because it is available. If the BOM says Pi 5,
   the bootloader becomes tryboot and PoC spec §4.1's reasoning has to be re-run — but the
   board abstraction is what makes that a new `board/` directory rather than a fork.
-- **Nothing about CI.** The harness is built to be CI-runnable (TEST-7); wiring it up is the
-  next step (PoC spec §2.2).
+- **Hardware-in-the-loop CI is not yet configured.** The initial GitHub workflow now lints,
+  builds and tests x86 under TCG; a manual input builds x86 and Pi images on separate
+  runners in parallel. The Pi still needs manual flashing and serial testing. A cold hosted
+  x86 build took about 94 minutes; the first completed build failed only because the QEMU
+  launcher assumed `/tmp/opencode` existed on a clean runner. The portable temp-dir fix and
+  its host-side regression test are awaiting the next CI run.
 - **Whether the U-Boot A/B path works anywhere but on the bench.** With `rpi4-qemu` dropped
   (D14), `bootloader=uboot`, the raw bootstate environment, the attempt counter and the hybrid
   MBR table are demonstrated on one physical Pi 4 and nowhere else. The PoC will show that

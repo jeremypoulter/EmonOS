@@ -60,6 +60,19 @@ EMONOS_RUN_REBOOT_TEST=1 EMONOS_QEMU_DISABLE_IO_URING=1 \
 tests/run.sh x86-64-vm -k feed_survives_reboot
 ```
 
+## CI builds
+
+`.github/workflows/ci.yml` lints the tree, builds the x86-64 image on a
+GitHub-hosted runner, and runs the shared VM suite with TCG (hosted runners
+do not provide KVM). A clean Buildroot toolchain takes about 94 minutes on
+that runner. The build needs at least 32 GiB free; CI removes unused SDKs
+from its disposable runner before checking capacity. It uploads checksums,
+the partition table and Buildroot configuration, not the raw disk image.
+
+Use the workflow's manual **build_rpi4** input to build the x86 and Pi images
+in parallel on separate hosted runners. The Pi image is not tested in CI:
+its bootloader and application tests still require the physical bench.
+
 The Raspberry Pi uses the same tests over its serial console. Supply the serial device at
 runtime rather than a numbered `/dev/ttyUSB*` path, which can change between boots. Use
 `/dev/serial/by-id/` if the adapter reports a unique serial number. Cheap adapters such as the

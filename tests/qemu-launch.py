@@ -23,6 +23,11 @@ def available_memory_mb() -> int:
     raise RuntimeError("MemAvailable is missing from /proc/meminfo")
 
 
+def overlay_directory() -> str | None:
+    preferred = os.environ.get("EMONOS_QEMU_TMPDIR", "/tmp/opencode")
+    return preferred if os.path.isdir(preferred) else None
+
+
 def replace_virtio_drive(arguments: list[str], overlay_path: str | None = None) -> list[str]:
     result: list[str] = []
     index = 0
@@ -110,7 +115,9 @@ def main() -> int:
         )
         return 1
 
-    with tempfile.TemporaryDirectory(prefix="emonos-qemu-", dir="/tmp/opencode") as tmpdir:
+    # /tmp/opencode exists on the development host, but not on clean CI
+    # runners. tempfile's default directory is the portable fallback.
+    with tempfile.TemporaryDirectory(prefix="emonos-qemu-", dir=overlay_directory()) as tmpdir:
         for attempt in range(1, MAX_ATTEMPTS + 1):
             overlay = f"{tmpdir}/disk.qcow2"
             for index, argument in enumerate(arguments[:-1]):

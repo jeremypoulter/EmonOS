@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      build_rpi4:
+        description: Build the Raspberry Pi image in parallel (hardware tests remain manual)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,10 +46,17 @@ jobs:
         # intentionally unavailable. git show checks this commit directly.
         run: git show --check --format= HEAD
 
-  build-and-test-x86:
-    name: Build and test x86-64 VM
+  build:
+    name: Build ${{ matrix.target }}${{ matrix.target == 'x86-64-vm' && ' and test' || '' }}
     needs: lint
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Build both targets on separate runners when explicitly requested.
+        # A default PR/push builds only x86 because the Pi needs hardware for
+        # runtime validation and its separate Buildroot tree costs ~25 GiB.
+        target: ${{ fromJSON(inputs.build_rpi4 && '["x86-64-vm","rpi4"]' || '["x86-64-vm"]') }}
     # A clean Buildroot toolchain + EDK2 + Go/Docker build took more than 75
     # minutes on the standard GitHub runner. Keep the test bounded, but allow
     # the cold build to finish before judging performance/cost.
@@ -74,7 +86,12 @@ jobs:
             mtools qemu-system-x86 ovmf rsync strace unzip wget
 
       - name: Install Python test dependencies
+        if: matrix.target == 'x86-64-vm'
         run: python -m pip install --requirement tests/requirements.txt
+
+      - name: Test QEMU launcher on a clean runner
+        if: matrix.target == 'x86-64-vm'
+        run: python -m pytest -q tests/test_qemu_launcher.py
 
       - name: Reclaim unused SDK space and check disk budget
         run: |
@@ -91,10 +108,15 @@ jobs:
             exit 1
           fi
 
-      - name: Build x86-64 VM image
-        run: make emonos_x86_64_vm
+      - name: Build ${{ matrix.target }} image
+        run: |
+          case '${{ matrix.target }}' in
+            x86-64-vm) make emonos_x86_64_vm ;;
+            rpi4) make emonos_rpi4 ;;
+          esac
 
       - name: Test x86-64 VM under TCG
+        if: matrix.target == 'x86-64-vm'
         env:
           # GitHub-hosted runners do not expose /dev/kvm. The normal local
           # default remains KVM; CI uses portable software emulation.
@@ -108,19 +130,20 @@ jobs:
         if: always()
         run: |
           mkdir -p ci-artifacts
-          if test -f output/x86-64-vm/images/emonos-x86-64-vm.img; then
-            sha256sum output/x86-64-vm/images/emonos-x86-64-vm.img > ci-artifacts/image.sha256
-            sfdisk -d output/x86-64-vm/images/emonos-x86-64-vm.img > ci-artifacts/partitions.sfdisk
+          image='output/${{ matrix.target }}/images/emonos-${{ matrix.target }}.img'
+          if test -f "$image"; then
+            sha256sum "$image" > ci-artifacts/image.sha256
+            sfdisk -d "$image" > ci-artifacts/partitions.sfdisk
           fi
-          if test -f output/x86-64-vm/.config; then
-            cp output/x86-64-vm/.config ci-artifacts/buildroot.config
+          if test -f 'output/${{ matrix.target }}/.config'; then
+            cp 'output/${{ matrix.target }}/.config' ci-artifacts/buildroot.config
           fi
 
       - name: Upload build evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: x86-64-vm-${{ github.sha }}
+          name: ${{ matrix.target }}-${{ github.sha }}
           path: ci-artifacts/
           if-no-files-found: warn
           retention-days: 14
