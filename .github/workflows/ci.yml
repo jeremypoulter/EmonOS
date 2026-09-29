@@ -38,6 +38,13 @@ jobs:
       - name: Validate Compose definition
         run: docker compose -f buildroot-external/app/docker-compose.yml config --quiet
 
+      - name: Validate data-image host tool selections
+        run: |
+          for target in emonos_x86_64_vm emonos_rpi4; do
+            grep -qx 'BR2_PACKAGE_HOST_E2FSPROGS=y' \
+              "buildroot-external/configs/${target}_defconfig"
+          done
+
       - name: Compile Python test harness
         run: python3 -m py_compile tests/*.py buildroot-external/app/*.py
 

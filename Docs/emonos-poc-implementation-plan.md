@@ -851,6 +851,10 @@ Beyond PoC spec §12, and stated so the plan is not over-read:
   assumed a developer-specific temporary directory existed on a clean runner. The next
   hosted build completed, but the TCG app test timed out while MariaDB was still initializing;
   the bounded app-start window is being extended and database logs captured on failure.
+  The following clean hosted build reached data-image assembly but lacked Buildroot's
+  host-e2fsprogs: local incremental output still had `mkfs.ext4` from the old ext4-root
+  configuration, hiding the dependency. Both defconfigs now select the host tool explicitly
+  and CI checks for it before beginning the expensive build.
   The launcher now uses Python's standard temporary-directory selection. CI pins the
   latest released actions by commit SHA and verifies a second image assembly yields the
   same SHA-256 on that runner. The pinned Buildroot commit supplies SOURCE_DATE_EPOCH;

@@ -28,6 +28,10 @@ command -v docker >/dev/null || {
     echo "Docker is required on the build host to preload application images" >&2
     exit 1
 }
+test -x "$HOST_DIR/sbin/mkfs.ext4" || {
+    echo "host-e2fsprogs must be selected for the data partition image" >&2
+    exit 1
+}
 
 get() {
     sed -n "s/^$1=//p" "$lock_file"
