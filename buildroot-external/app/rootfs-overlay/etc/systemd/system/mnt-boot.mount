@@ -1,0 +1,12 @@
+[Unit]
+Description=EmonOS shared boot partition
+Before=local-fs.target emonos-persist.service
+
+[Mount]
+What=/dev/disk/by-partlabel/boot
+Where=/mnt/boot
+Type=vfat
+Options=rw,noatime
+
+[Install]
+WantedBy=local-fs.target

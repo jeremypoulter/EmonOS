@@ -1,0 +1,36 @@
+#!/bin/sh
+# The stock systemd-repart service runs on every boot. Once a disk is full,
+# repart exits 1 with "available free space (0B)" even though it is correctly
+# provisioned. Skip it only when no useful space remains after the data slot.
+set -eu
+
+data=
+for entry in /sys/class/block/*/uevent; do
+    if grep -qx 'PARTNAME=data' "$entry"; then
+        if [ -n "$data" ]; then
+            echo "Multiple data partitions found; refusing to repartition" >&2
+            exit 1
+        fi
+        data=${entry%/uevent}
+    fi
+done
+test -n "$data" || {
+    echo "No EmonOS data partition found" >&2
+    exit 1
+}
+
+disk=$(basename "$(dirname "$(readlink -f "$data")")")
+size=$(cat "/sys/class/block/$disk/size")
+start=$(cat "$data/start")
+length=$(cat "$data/size")
+free_sectors=$((size - start - length))
+test "$free_sectors" -ge 0
+
+# Leave room for GPT metadata and 1 MiB partition alignment. A fully grown
+# disk has only a few dozen free sectors at the tail.
+if [ "$free_sectors" -lt 8192 ]; then
+    echo "EmonOS data partition already fills $disk"
+    exit 0
+fi
+
+exec /usr/bin/systemd-repart --dry-run=no "/dev/$disk"

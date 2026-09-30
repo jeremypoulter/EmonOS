@@ -45,7 +45,7 @@ printf 'BOOT_ORDER=A B\nBOOT_A_LEFT=1\nBOOT_B_LEFT=0\n' > "${BUILD_DIR}/emonos-b
 "${BUILD_DIR}/uboot-2026.01/tools/mkenvimage" -s 16384 \
     -o "${BUILD_DIR}/emonos-bootstate.bin" "${BUILD_DIR}/emonos-bootstate.env"
 dd if="${BUILD_DIR}/emonos-bootstate.bin" of="${BINARIES_DIR}/bootstate.img" \
-    bs=512 seek=32 conv=notrunc status=none
+    bs=512 conv=notrunc status=none
 
 rm -rf "${GENIMAGE_TMP}"
 genimage \

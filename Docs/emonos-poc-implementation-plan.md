@@ -399,7 +399,7 @@ blocked; each is reversible, and the ones worth your explicit sign-off are repea
 | D3 | Templating for `system.conf` / `manifest.raucm` | **`envsubst`**, not `tempio` | The reference uses a Go-template binary (`tempio`) because its templates have conditionals. Ours have two variants; `envsubst` plus one `if` in shell is less machinery. genimage already does `${VAR}` substitution natively |
 | D4 | Partition table | GPT, **hybrid MBR alias on Pi targets**, driven by `PARTITION_TABLE_TYPE` in board `meta` | F3 |
 | D5 | Partition count | **7** — add `emonos-bootstate` (8 MB); no overlay partition | F2 |
-| D6 | Slot sizes | start at PoC spec values (kernel 32 MB, rootfs 512 MB); **measure at end of WP4 and fix the number before WP8 writes it into tests** | R4. Reference uses 24 MB / 256 MB with EROFS and no Docker; we carry ~200 MB of Go binaries, so 512 MB is plausible but unproven |
+| D6 | Slot sizes | **Fixed for the PoC: kernel 32 MiB, system 512 MiB** (measured at WP4 close, 2026-09-30) | Rootfs zstd squashfs measures ~104 MiB x86 and ~117 MiB Pi; Docker images/data are on the separate 6 GiB initial data filesystem. This retains ample growth room within each immutable slot. Revisit for a product release, not mid-PoC |
 | D7 | Writable paths on a read-only root | **No overlay partition.** `/var` on tmpfs; `/etc` read-only; SSH host keys and everything else persistent explicitly on `/mnt/data`; `/var/lib/docker` bind-mounted from `/mnt/data/docker` | Keeps the PoC at 7 partitions and forces persistent state onto the data partition, which is DATA-1 anyway. The forcing function is deliberate (design doc §6.2). Cost: no persistent host OS settings — acceptable for a PoC, revisit for v1 |
 | D8 | `machine-id` | Persist it in the bootloader environment and pass `systemd.machine_id=` on the cmdline, with `systemd.condition-first-boot=true` when empty | Exactly what the reference does in both `grub.cfg` and `uboot-boot64.ush` [verified], ~20 lines, and it proves userspace can write the boot env — which RAUC needs regardless |
 | D9 | Shared boot partition update | **Freeze shared firmware, bootloader, boot configuration and `grubenv` during PoC updates.** RAUC bundles update only inactive kernel/rootfs slot pairs. Retain an install-hook prototype only as reference for the later OS-16 variant-fragment work. | Replacing shared boot assets is not independently atomic merely because selected files are preserved. A power failure in that replacement can break both slots. This PoC proves slot updates, not safe shared-bootloader updates; report OS-11 coverage as partial. |
@@ -648,33 +648,61 @@ php-mosquitto then passed through `emoncms_mqtt`, the Redis buffer and `feedwrit
 
 ### WP4 — A/B layout, read-only root, data partition (~1–2 weeks) → **T2, T3**
 
-**Work in progress (2026-09-27):** both boards now assemble the seven-partition
+**Completed (2026-09-30):** both boards assemble the seven-partition
 layout (`boot`, `kernel-a`, `system-a`, `kernel-b`, `system-b`, `bootstate`,
 `data`). Both system slots contain the same zstd squashfs; each kernel slot
-contains a gzip squashfs so U-Boot can read `/Image`. Initial slot sizes are
+contains a gzip squashfs so U-Boot can read `/Image`. Fixed PoC slot sizes are
 32 MiB kernel, 512 MiB system and 6 GiB data. GPT is used on x86; the Pi's
 hybrid GPT/MBR aliases only its FAT boot partition into MBR (hybrid MBR has at
 most three entries). Slot A is seeded bootable in GRUB/U-Boot state; B is
 populated but not yet valid for trials. The x86 image has booted slot A and
 passed the shared runtime and authenticated feed check on a read-only root.
 The x86 gated reboot test also verified that a PHPFina feed survives reboot.
-The Pi image has **not yet been flashed or booted** with this layout.
+The Pi booted slot A and passed the common runtime, mount and authenticated
+app checks. A PHPFina feed checksum survived reboot.
 
 One `emonos-data` ext4 filesystem holds `/mnt/data/docker`, while MariaDB,
 PHPFina, PHPTimeSeries and Redis use explicit bind mounts under
 `/mnt/data/emoncms/` and `/mnt/data/redis/`, outside Docker-managed volumes.
 `/var` is tmpfs; the data mount is resolved by label before Docker starts.
-The x86 rootfs is ~91 MiB zstd squashfs, well below the provisional 512 MiB
-slot (Pi is ~110 MiB before the latest e2fsprogs addition). The test harness
+The final rootfs is ~104 MiB x86 and ~117 MiB Pi, well within each 512 MiB
+system slot. The test harness
 now creates a separate temporary qcow2 overlay for each VM run: QEMU's
 `-snapshot` flag did **not** protect a disk attached by `-blockdev` and earlier
 test runs inadvertently modified the source image, corrupting MariaDB.
 Rebuilding the image and protecting it with the overlay restored clean tests.
 
-**Still to do in WP4:** boot and verify the new Pi image (including reboot
-persistence); safely grow the last data partition to fill the installed card;
-persist a device-specific machine ID in boot state (D8); persist SSH host
-keys on the data partition; then freeze slot sizes and mark T2/T3 complete.
+**WP4 local status (2026-09-29):** x86 now passes the full app/mount and
+device-ID checks. The GRUB boot environment stores the machine ID on first
+boot and passes it back through `systemd.machine_id=` after reboot. OpenSSH
+host keys remain on the data partition. With a disposable 10 GiB QEMU overlay
+over the 7 GiB image, systemd-repart expanded only partition 7 and
+systemd-growfs expanded its ext4 filesystem; a feed, host key and machine ID
+then survived reboot. Repart matches a dedicated data GPT type UUID:
+`Label=` does not participate in matching, and `GrowFileSystem=` is not
+supported for a custom type, so the explicit growfs unit runs after mounting.
+**Pi evidence and D8 correction (2026-09-29):** the flashed image passed the
+normal suite (11 passed, 2 skipped), including partition growth, bootstate
+machine-ID write, SSH and the authenticated feed path. Reboot retained the
+feed and SSH host key, but the machine ID changed: U-Boot reads/writes the
+first 16 KiB of bootstate, while Linux `fw_setenv` was configured at offset
+`0x4000`. The two valid environments diverged. The next image seeds and
+uses offset zero for both; a CRC/offset test checks the image before flash.
+The offset-zero image then passed the normal Pi suite (12 passed, 2 skipped)
+and a reboot retained the same feed, host key and machine ID. The data
+partition grew to 57.3 GiB. A post-test service check found a second-boot
+repart failure: the stock service returns an error when no space remains
+(0 B), even though growth completed. `emonos-repart` now skips the call when
+the last data partition is already at the disk tail; its no-op path was
+verified on the live Pi. The final wrapper passed first-boot growth and reboot
+on an enlarged x86 VM. The final flashed Pi image passed the normal suite
+(12 passed, 2 skipped) and the gated reboot test on 2026-09-30: the feed,
+ED25519 host key and machine ID stayed unchanged; no units were failed after
+reboot. `/mnt/data` grew to 57.3 GiB (53.5 GiB free), and the ID in bootstate
+matched `/etc/machine-id`. **T2 and T3 are met on both targets.** This does not
+yet prove data survival when an OS slot is replaced by RAUC (WP6).
+The Pi has moved to Tasmota `Power1`; only its previous `Power5` wiring was
+tested for a scripted power cut, so retest Power1 before T7.
 
 1. `genimage/partitions-os.cfg` — the seven partitions of D5/F2, sizes from `meta` +
    `hdd-image.sh`. `kernel.img` built as a squashfs (F6).
@@ -792,12 +820,12 @@ builds.
 |---|---|---|---|---|
 | ~~**R1**~~ | ~~`raspi4b` too unfaithful to be a proxy~~ | — | — | **RETIRED 2026-09-16.** Boots a real Pi 4 kernel to aarch64 userspace on 4 CPUs. Fidelity limits are known and bounded (F4) |
 | ~~**R2**~~ | ~~`raspi4b` GENET networking incomplete~~ | — | — | **RETIRED 2026-09-16 — worse than assumed: no ethernet at all.** Both remaining targets have working networking, so it is now moot as well as retired; its legacy is D18 |
-| **R3** | Docker needs writable paths not yet identified | rework in WP4 | WP3 | Run the stack on a writable root first |
-| **R4** | 512 MB slots may not fit Docker | repartition | WP4 | Measure; fix the number before WP8. **2026-09-24:** the `rpi4` root with Docker installed uses 355 MB of 488 MB, leaving 97 MB. Images must live on the data partition, never on the slot |
+| ~~**R3**~~ | ~~Docker needs writable paths not yet identified~~ | — | — | **RETIRED 2026-09-30.** Both targets run Docker from `/mnt/data/docker` with a squashfs root and tmpfs `/var`; the application data is bound from separate data directories |
+| ~~**R4**~~ | ~~512 MiB slots may not fit Docker~~ | — | — | **RETIRED 2026-09-30.** Rootfs is ~104 MiB x86 / ~117 MiB Pi, while Docker and preload use the data partition. D6 fixes 512 MiB system and 32 MiB kernel slots for the PoC |
 | ~~**R5**~~ | ~~Preloaded images may not fit the data partition~~ | — | — | **RETIRED 2026-09-25.** Pi and x86 clean-store offline preload tests pass using D11's local immutable tags. Docker archive 1.2 GB; Docker logical images 1.26 GB but actual overlay storage ~2.2 GB. A 4 GB root exhausted during the archive/load overlap. Docker must be data-partition resident; WP4's PoC minimum is 6 GB. Do not assume digest names survive `docker save` |
 | ~~**R6**~~ | ~~No arm64 `emoncms` image~~ | — | — | **RETIRED 2026-09-24.** Cross-compiled extensions and a multi-platform image in GHCR, validated on the Pi 4 (F1 resolution note). The native arm64 runner fallback was not needed |
 | **R7** | **QEMU intermittently fails to start under host memory pressure** [verified] | flaky CI; misleading failures | WP1 (harness) | **Harness-side only, by decision (D15): no host change.** A `MemAvailable` precondition plus a retry matched to the literal `Failed to initialize io_uring`, max 3 attempts. Never blanket-retry a boot failure |
-| **R8** | Read-only `/etc` without an overlay (D7) may break something not yet found — sshd, systemd, Docker | rework, adds a partition | WP4 | If it bites, add the overlay partition the reference has. Known escape hatch, not a dead end |
+| ~~**R8**~~ | ~~Read-only `/etc` without an overlay may break sshd/systemd/Docker~~ | — | — | **RETIRED FOR THE WP4 WORKLOAD 2026-09-30.** Both targets boot/read-only with data-backed SSH keys, persistent machine ID and Docker/app stack; re-evaluate if WP5 adds a new persistent `/etc` requirement |
 | **R9** | Compose v2 under Buildroot on aarch64 is not a path the reference exercises (it uses systemd units per container) | fall back to `docker run` units | WP2 | `docker compose version` on both targets in WP2, before WP3 depends on it. Note this is now an aarch64 claim testable **only on the bench** (R12). **2026-09-24:** Docker 28.3.3 and Compose 2.38.2 on `rpi4` ran the four-service stack with health-gated `depends_on` and `up --wait` |
 | **R10** | Host-side vs in-guest health checks diverge between targets, so T2–T7 are not actually one test suite | breaks T8; late rework | WP3 | Settle on in-guest checks over the serial console before T2 is written (D18) |
 | ~~**R11**~~ | ~~`rpi4-qemu` sees only ~960 MB and cannot use KVM~~ | — | — | **MOOT 2026-09-16 (D14).** A real Pi 4 has 4–8 GB and runs at native speed. The 5-minute health-check budget of PoC spec §7 is no longer under pressure from emulation |
@@ -813,7 +841,7 @@ builds.
 | WP1 | Skeleton, board abstraction, x86 to a shell, thin harness | 2 wk |
 | WP2 | Docker, both targets — **T1** | 3 wk |
 | WP3 | emoncms on a writable root | 4 wk |
-| WP4 | A/B, squashfs, data partition — **T2, T3** | 5.5 wk |
+| WP4 | **DONE 2026-09-30** — A/B, squashfs, data partition; **T2, T3** on x86 and Pi | 5.5 wk |
 | WP5 | RAUC, bundles — **T4** | 7 wk |
 | WP6 | Update round trip — **T5** | 8 wk |
 | WP7 | Health check, rollback, power cut — **T6, T7** | 9.5 wk |

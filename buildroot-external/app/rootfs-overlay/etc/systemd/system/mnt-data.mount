@@ -3,6 +3,7 @@ Description=EmonOS persistent data partition
 Before=local-fs.target docker.service emonos-preload.service
 After=systemd-repart.service
 Wants=systemd-repart.service
+Wants=systemd-growfs@mnt-data.service
 After=systemd-fsck@dev-disk-by\x2dlabel-emonos\x2ddata.service
 Wants=systemd-fsck@dev-disk-by\x2dlabel-emonos\x2ddata.service
 

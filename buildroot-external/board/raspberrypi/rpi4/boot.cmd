@@ -7,6 +7,11 @@ env import -c ${ramdisk_addr_r} 0x4000
 if test -z "${BOOT_ORDER}"; then setenv BOOT_ORDER 'A B'; fi
 if test -z "${BOOT_A_LEFT}"; then setenv BOOT_A_LEFT 1; fi
 if test -z "${BOOT_B_LEFT}"; then setenv BOOT_B_LEFT 0; fi
+if test -z "${MACHINE_ID}"; then
+    setenv boot_condition "systemd.condition-first-boot=true"
+else
+    setenv boot_condition ""
+fi
 
 # The Raspberry Pi kernel DTB hard-codes cgroup_disable=memory in /chosen.
 # Do not inherit firmware bootargs: it would silently disable Docker's cgroup
@@ -18,13 +23,13 @@ for BOOT_SLOT in ${BOOT_ORDER}; do
     if test -z "${bootargs}"; then
         if test "${BOOT_SLOT}" = A && test ${BOOT_A_LEFT} -gt 0; then
             if sqfsload mmc ${devnum}:2 ${kernel_addr_r} /Image; then
-                setenv bootargs "${bootargs_rpi} root=PARTUUID=8d3d53e3-6d49-4c38-8349-aff6859e82fd rootfstype=squashfs rootwait ro 8250.nr_uarts=1 console=ttyS0,115200 rauc.slot=A"
+                setenv bootargs "${bootargs_rpi} root=PARTUUID=8d3d53e3-6d49-4c38-8349-aff6859e82fd rootfstype=squashfs rootwait ro 8250.nr_uarts=1 console=ttyS0,115200 rauc.slot=A systemd.machine_id=${MACHINE_ID} ${boot_condition}"
             fi
         fi
         if test "${BOOT_SLOT}" = B && test ${BOOT_B_LEFT} -gt 0; then
             setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1
             if sqfsload mmc ${devnum}:4 ${kernel_addr_r} /Image; then
-                setenv bootargs "${bootargs_rpi} root=PARTUUID=a3ec664e-32ce-4665-95ea-7ae90ce9aa20 rootfstype=squashfs rootwait ro 8250.nr_uarts=1 console=ttyS0,115200 rauc.slot=B"
+                setenv bootargs "${bootargs_rpi} root=PARTUUID=a3ec664e-32ce-4665-95ea-7ae90ce9aa20 rootfstype=squashfs rootwait ro 8250.nr_uarts=1 console=ttyS0,115200 rauc.slot=B systemd.machine_id=${MACHINE_ID} ${boot_condition}"
             fi
         fi
     fi

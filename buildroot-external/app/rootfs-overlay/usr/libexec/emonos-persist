@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+machine_id=$(cat /etc/machine-id)
+printf '%s\n' "$machine_id" | grep -Eq '^[0-9a-f]{32}$' || {
+    echo "Invalid or missing systemd machine ID" >&2
+    exit 1
+}
+
+if command -v grub-editenv >/dev/null; then
+    mountpoint -q /mnt/boot
+    env_file=/mnt/boot/EFI/BOOT/grubenv
+    current=$(grub-editenv "$env_file" list | sed -n 's/^MACHINE_ID=//p')
+    if [ -z "$current" ]; then
+        grub-editenv "$env_file" set "MACHINE_ID=$machine_id"
+    elif [ "$current" != "$machine_id" ]; then
+        echo "GRUB machine ID differs from running system" >&2
+        exit 1
+    fi
+elif command -v fw_setenv >/dev/null; then
+    # Do not mistake an unreadable/corrupt environment for a missing key.
+    fw_printenv BOOT_ORDER >/dev/null
+    current=$(fw_printenv -n MACHINE_ID 2>/dev/null || true)
+    if [ -z "$current" ]; then
+        fw_setenv MACHINE_ID "$machine_id"
+    elif [ "$current" != "$machine_id" ]; then
+        echo "U-Boot machine ID differs from running system" >&2
+        exit 1
+    fi
+else
+    echo "No supported boot environment writer installed" >&2
+    exit 1
+fi
+
+sync

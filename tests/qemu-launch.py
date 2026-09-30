@@ -29,6 +29,16 @@ def overlay_directory() -> str | None:
     return os.environ.get("EMONOS_QEMU_TMPDIR") or None
 
 
+def run_image_command(arguments: list[str]) -> None:
+    command = ["qemu-img", *arguments]
+    if os.environ.get("EMONOS_QEMU_DISABLE_IO_URING") == "1":
+        command = [
+            "strace", "-f", "-qq", "-e", "trace=io_uring_setup", "-e",
+            "inject=io_uring_setup:error=EPERM", *command,
+        ]
+    subprocess.run(command, check=True)
+
+
 def replace_virtio_drive(arguments: list[str], overlay_path: str | None = None) -> list[str]:
     result: list[str] = []
     index = 0
@@ -126,16 +136,11 @@ def main() -> int:
                     field.split("=", 1) for field in arguments[index + 1].split(",") if "=" in field
                 )
                 if options.get("if") == "virtio" and "file" in options:
-                    image_command = [
-                        "qemu-img", "create", "-q", "-f", "qcow2", "-F", "raw", "-b",
-                        options["file"], overlay,
-                    ]
-                    if os.environ.get("EMONOS_QEMU_DISABLE_IO_URING") == "1":
-                        image_command = [
-                            "strace", "-f", "-qq", "-e", "trace=io_uring_setup", "-e",
-                            "inject=io_uring_setup:error=EPERM", *image_command,
-                        ]
-                    subprocess.run(image_command, check=True)
+                    run_image_command([
+                        "create", "-q", "-f", "qcow2", "-F", "raw", "-b", options["file"], overlay,
+                    ])
+                    if disk_size := os.environ.get("EMONOS_QEMU_DISK_SIZE"):
+                        run_image_command(["resize", "-q", "-f", "qcow2", overlay, disk_size])
                     break
             else:
                 raise RuntimeError("no virtio disk to protect with a qcow2 overlay")

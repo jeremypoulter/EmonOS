@@ -4,10 +4,11 @@ EmonOS is a minimal, immutable host OS for the emoncms container stack.
 
 ## Development status
 
-The common runtime and emoncms application stack run on the x86-64 VM and Raspberry Pi 4.
-WP4 is introducing a seven-partition A/B layout, read-only squashfs system slots and a
-persistent data partition. The x86 VM boots the new layout; the Pi build has not yet been
-validated on hardware. See `Docs/emonos-poc-implementation-plan.md` for current status.
+The x86-64 VM and Raspberry Pi 4 both boot the seven-partition A/B layout
+with read-only squashfs system slots and a persistent data partition. The
+emoncms stack, data-partition growth, machine ID and SSH host keys survive
+reboot on both targets (WP4, T2/T3). RAUC updates and rollback are next.
+See `Docs/emonos-poc-implementation-plan.md` for the PoC scope.
 
 ## Build the x86 VM image
 
@@ -58,6 +59,14 @@ that a PHPFina feed survives a guest reboot, run the gated test (the normal VM u
 ```sh
 EMONOS_RUN_REBOOT_TEST=1 EMONOS_QEMU_DISABLE_IO_URING=1 \
 tests/run.sh x86-64-vm -k feed_survives_reboot
+```
+
+To test first-boot data-partition growth without modifying the built image,
+give the VM a larger disposable qcow2 overlay:
+
+```sh
+EMONOS_QEMU_DISK_SIZE=10G EMONOS_QEMU_DISABLE_IO_URING=1 \
+tests/run.sh x86-64-vm -k 'data_partition_growth or persistent_identity_and_ssh'
 ```
 
 ## CI builds

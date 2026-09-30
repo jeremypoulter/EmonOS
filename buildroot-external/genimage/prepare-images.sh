@@ -23,6 +23,9 @@ test "$(wc -c < "$images/rootfs.squashfs")" -lt $((512 * 1024 * 1024))
 cp "$images/rootfs.squashfs" "$images/system.img"
 truncate -s 512M "$images/system.img"
 
+# Truncating an existing 8 MiB file does not erase a previous environment.
+# Always start from an empty slot so incremental and clean builds agree.
+rm -f "$images/bootstate.img"
 truncate -s 8M "$images/bootstate.img"
 
 # The two board hooks write their boot-filesystem recipe and the start of the

@@ -1,0 +1,12 @@
+[Unit]
+Description=Persist EmonOS machine ID in bootloader state
+After=local-fs.target
+RequiresMountsFor=/mnt/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/emonos-persist
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

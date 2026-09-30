@@ -45,6 +45,8 @@ cp "$external_dir/app/docker-compose.yml" "$target_dir/opt/emonos/docker-compose
 cp "$lock_file" "$target_dir/opt/emonos/images.lock"
 mkdir -p "$target_dir/etc/systemd/system/multi-user.target.wants"
 mkdir -p "$target_dir/etc/systemd/system/local-fs.target.wants"
+mkdir -p "$target_dir/mnt/boot"
+rm -f "$target_dir/mnt/boot/.keep" # stale from earlier incremental builds
 ln -sf ../mnt-data.mount "$target_dir/etc/systemd/system/local-fs.target.wants/mnt-data.mount"
 ln -sf ../var-lib-docker.mount "$target_dir/etc/systemd/system/local-fs.target.wants/var-lib-docker.mount"
 ln -sf ../var.mount "$target_dir/etc/systemd/system/local-fs.target.wants/var.mount"
@@ -52,6 +54,10 @@ ln -sf ../emonos-first-boot.service "$target_dir/etc/systemd/system/local-fs.tar
 ln -sf ../etc-ssh.mount "$target_dir/etc/systemd/system/multi-user.target.wants/etc-ssh.mount"
 ln -sf ../emonos-preload.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-preload.service"
 ln -sf ../emonos-app.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-app.service"
+ln -sf ../emonos-persist.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-persist.service"
+if [ "$platform" = linux/amd64 ]; then
+    ln -sf ../mnt-boot.mount "$target_dir/etc/systemd/system/local-fs.target.wants/mnt-boot.mount"
+fi
 set --
 for service in web db redis mqtt; do
     source=$(get "$service.source")

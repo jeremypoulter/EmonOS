@@ -77,6 +77,8 @@ systemctl --failed --no-pager
 ## Bench connection details
 
 - Serial adapter: `/dev/ttyUSB2` (115200 8N1).
-- Tasmota host: `172.16.1.2`, power output **5** (`Power5`).
-- Power API authentication and automated control have not yet been tested. Only output 5
-  should be operated by this target's eventual test profile.
+- Tasmota host: `172.16.1.2`, current Pi power output **1** (`Power1`) as of
+  2026-09-29. Output 5 was used for the 2026-09-25 controlled power-cycle
+  test but is no longer wired to this Pi. Do not operate Power5 for this target.
+- Power1 has not yet had its off/on recovery test; verify its wiring and boot
+  recovery before using it for the later T7 interruption test.

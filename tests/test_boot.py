@@ -2,6 +2,8 @@
 
 import base64
 import os
+import subprocess
+import zlib
 from pathlib import Path
 
 import pytest
@@ -43,6 +45,39 @@ def test_target_image_is_present(target_name: str, repo_root: Path) -> None:
     assert image.is_file(), f"build {target_name} first; missing {image}"
 
 
+def test_data_partition_type_matches_repart(target_name: str, repo_root: Path) -> None:
+    """WP4: systemd-repart must match only the last data partition."""
+    expected = "93c548ef-01e5-4bad-a92c-f5b0fd394e78"
+    config = (repo_root / "buildroot-external/app/rootfs-overlay/usr/lib/repart.d/80-emonos-data.conf")
+    assert f"Type={expected}" in config.read_text()
+    image = repo_root / f"output/{target_name}/images/emonos-{target_name}.img"
+    if not image.is_file():
+        pytest.skip(f"build {target_name} first")
+    table = subprocess.check_output(["sfdisk", "-d", str(image)], text=True)
+    data = next(line for line in table.splitlines() if ".img7 :" in line)
+    assert f"type={expected}" in data.lower()
+    for line in table.splitlines():
+        if ".img" in line and ".img7 :" not in line:
+            assert f"type={expected}" not in line.lower()
+
+
+def test_pi_bootstate_environment_offset(target_name: str, repo_root: Path) -> None:
+    """D8: Linux fw_setenv and U-Boot must use the same 16 KiB block."""
+    if target_name != "rpi4":
+        pytest.skip("only the Pi uses the raw U-Boot environment")
+    config = repo_root / "buildroot-external/board/raspberrypi/rpi4/rootfs-overlay/etc/fw_env.config"
+    assert " 0x0000 0x4000 " in config.read_text()
+    image = repo_root / "output/rpi4/images/bootstate.img"
+    if not image.is_file():
+        pytest.skip("build the Pi image first")
+    with image.open("rb") as bootstate:
+        environment = bootstate.read(0x4000)
+        assert bootstate.read(0x4000) == bytes(0x4000)
+    expected_crc = int.from_bytes(environment[:4], "little")
+    assert zlib.crc32(environment[4:]) == expected_crc
+    assert b"BOOT_ORDER=A B" in environment
+
+
 def test_targets_use_common_runtime(repo_root: Path) -> None:
     """HW-3: both targets select the common EmonOS runtime and kernel policy."""
     for target in ("emonos_x86_64_vm", "emonos_rpi4"):
@@ -62,9 +97,10 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
         logs = command.run_check(
             "journalctl --no-pager -u emonos-app.service -u sshd.service -n 50 || true"
         )
+        boot_logs = command.run_check("journalctl --no-pager -u mnt-boot.mount -n 30 || true")
         db_logs = command.run_check("docker logs emonos-db-1 2>&1 | head -85 || true")
         disk = command.run_check("df -h /mnt/data /var/lib/docker || true")
-        pytest.fail("failed units: " + "\n".join([*failed, *logs, *db_logs, *disk]))
+        pytest.fail("failed units: " + "\n".join([*failed, *logs, *boot_logs, *db_logs, *disk]))
 
     controllers = set(command.run_check("cat /sys/fs/cgroup/cgroup.controllers")[0].split())
     assert REQUIRED_CGROUP_CONTROLLERS <= controllers
@@ -133,6 +169,42 @@ def test_ab_layout(command) -> None:
     assert command.run_check("cat /sys/class/block/*/partition | wc -l") == ["7"]
 
 
+@pytest.mark.timeout(180)
+def test_persistent_identity_and_ssh(command, target_name: str) -> None:
+    """D8: first boot persists a device ID; SSH keys live on the data partition."""
+    if not command.poll_until_success(
+        "systemctl is-active --quiet emonos-persist.service",
+        tries=30, timeout=120.0, sleepduration=4,
+    ):
+        logs = command.run_check("journalctl --no-pager -u emonos-persist.service -n 30")
+        pytest.fail("machine ID persistence failed: " + "\n".join(logs))
+    machine_id = command.run_check("cat /etc/machine-id")[0]
+    assert len(machine_id) == 32 and all(ch in "0123456789abcdef" for ch in machine_id)
+    if target_name == "x86-64-vm":
+        stored_id = command.run_check(
+            "grub-editenv /mnt/boot/EFI/BOOT/grubenv list | sed -n 's/^MACHINE_ID=//p'"
+        )[0]
+    else:
+        stored_id = command.run_check("fw_printenv -n MACHINE_ID")[0]
+    assert stored_id == machine_id
+    command.run_check("mountpoint -q /etc/ssh")
+    command.run_check("test -s /mnt/data/ssh/ssh_host_ed25519_key.pub")
+    command.run_check("sshd -T | grep -qi '^passwordauthentication no$'")
+
+
+@pytest.mark.timeout(600)
+def test_data_partition_growth(command, target_name: str) -> None:
+    """D11: last data partition uses spare media capacity before mounting."""
+    if target_name == "x86-64-vm" and not os.environ.get("EMONOS_QEMU_DISK_SIZE"):
+        pytest.skip("set EMONOS_QEMU_DISK_SIZE=10G to test repart on a larger VM disk")
+    device = "vda7" if target_name == "x86-64-vm" else "mmcblk0p7"
+    partition_sectors = int(command.run_check(f"cat /sys/class/block/{device}/size")[0])
+    # A 6 GiB initial partition is 12,582,912 sectors; expect expansion.
+    assert partition_sectors > 12582912
+    blocks = int(command.run_check("df -k /mnt/data | tail -1 | awk '{print $2}'")[0])
+    assert blocks > 6 * 1024 * 1024
+
+
 @pytest.mark.timeout(900)
 def test_feed_survives_reboot(command, target) -> None:
     """T3: a PHPFina feed stays on the data partition across a slot-A reboot."""
@@ -150,6 +222,8 @@ def test_feed_survives_reboot(command, target) -> None:
     feed = command.run_check("find /mnt/data/emoncms/phpfina -name '*.dat' | head -1")[0]
     assert feed
     original = command.run_check(f"sha256sum {feed}")[0]
+    machine_id = command.run_check("cat /etc/machine-id")[0]
+    host_key = command.run_check("sha256sum /mnt/data/ssh/ssh_host_ed25519_key.pub")[0]
     command.run_check("sync")
     command.console.sendline("systemctl reboot")
     target.deactivate(command)
@@ -163,6 +237,10 @@ def test_feed_survives_reboot(command, target) -> None:
         tries=90, timeout=360.0, sleepduration=4,
     )
     assert command.run_check(f"sha256sum {feed}") == [original]
+    assert command.run_check("cat /etc/machine-id") == [machine_id]
+    assert command.run_check("sha256sum /mnt/data/ssh/ssh_host_ed25519_key.pub") == [host_key]
+    command.run_check(f"grep -q 'systemd.machine_id={machine_id}' /proc/cmdline")
+    command.run_check("test -z \"$(systemctl --failed --no-pager --no-legend --plain)\"")
     command.run_check("test -f /mnt/data/.preload.done")
 
 

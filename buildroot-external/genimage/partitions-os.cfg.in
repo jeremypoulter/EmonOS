@@ -35,6 +35,7 @@
 
     partition data {
         image = "data.ext4"
-        partition-type-uuid = "linux"
+        # EmonOS-specific GPT type: systemd-repart matches by type, not Label.
+        partition-type-uuid = "93c548ef-01e5-4bad-a92c-f5b0fd394e78"
         partition-uuid = a52a4597-fa3a-4851-aefd-2fbe9f849079
     }

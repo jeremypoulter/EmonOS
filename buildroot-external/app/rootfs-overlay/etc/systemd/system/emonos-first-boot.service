@@ -1,8 +1,8 @@
 [Unit]
 Description=Prepare EmonOS persistent application directories
 DefaultDependencies=no
-Requires=var.mount mnt-data.mount
-After=var.mount mnt-data.mount
+Requires=var.mount mnt-data.mount systemd-growfs@mnt-data.service
+After=var.mount mnt-data.mount systemd-growfs@mnt-data.service
 Before=var-lib-docker.mount local-fs.target
 Conflicts=shutdown.target
 Before=shutdown.target
