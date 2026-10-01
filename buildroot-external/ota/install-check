@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+test "${1:-}" = install-check || exit 1
+if [ -z "${RAUC_SYSTEM_COMPATIBLE:-}" ] || \
+    [ "$RAUC_SYSTEM_COMPATIBLE" != "${RAUC_MF_COMPATIBLE:-}" ]; then
+    echo 'Bundle is not compatible with this EmonOS board' >&2
+    exit 10
+fi

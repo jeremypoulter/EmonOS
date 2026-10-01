@@ -106,7 +106,7 @@ jobs:
 
       - name: Test QEMU launcher on a clean runner
         if: matrix.target == 'x86-64-vm'
-        run: python -m pytest -q tests/test_qemu_launcher.py tests/test_docker_archive.py
+        run: python -m pytest -q tests/test_qemu_launcher.py tests/test_docker_archive.py tests/test_ota_scripts.py
 
       - name: Reclaim unused SDK space and check disk budget
         run: |
@@ -122,6 +122,9 @@ jobs:
             echo 'EmonOS requires at least 32 GiB free for a clean Buildroot build.' >&2
             exit 1
           fi
+
+      - name: Create ephemeral PoC signing credentials
+        run: make rauc_dev_keys
 
       - name: Build ${{ matrix.target }} image
         run: |
@@ -151,6 +154,7 @@ jobs:
           EMONOS_QEMU_EXTRA_ARGS: -accel tcg,thread=multi -snapshot
           EMONOS_QEMU_DISABLE_IO_URING: '1'
           EMONOS_QEMU_MIN_AVAILABLE_MB: '4096'
+          EMONOS_QEMU_RAUC_BUNDLE: ${{ github.workspace }}/output/x86-64-vm/images/emonos-x86-64-vm.raucb
         run: tests/run.sh x86-64-vm -q
 
       - name: Record build evidence
@@ -167,6 +171,13 @@ jobs:
           fi
           if test -f image-reproducibility.txt; then
             cp image-reproducibility.txt ci-artifacts/image-reproducibility.txt
+          fi
+          bundle='output/${{ matrix.target }}/images/emonos-${{ matrix.target }}.raucb'
+          if test -f "$bundle"; then
+            sha256sum "$bundle" > ci-artifacts/bundle.sha256
+            'output/${{ matrix.target }}/host/bin/rauc' \
+              --keyring='output/${{ matrix.target }}/target/etc/rauc/keyring.pem' \
+              info --output-format=json "$bundle" > ci-artifacts/bundle-info.json
           fi
 
       - name: Upload build evidence

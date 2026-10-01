@@ -41,6 +41,12 @@ rm -rf "$data_stage"
 mkdir -p "$data_stage/preload" "$data_stage/docker" \
     "$data_stage/emoncms/db" "$data_stage/emoncms/phpfina" \
     "$data_stage/emoncms/phptimeseries" "$data_stage/redis"
+mkdir -p "$data_stage/rauc"
+for slot in kernel.0 rootfs.0 kernel.1 rootfs.1; do
+    printf '[slot.%s]\nbundle.compatible=%s\nbundle.version=%s\nstatus=ok\n\n' \
+        "$slot" "$(cat "$target_dir/usr/lib/emonos/compatible")" \
+        "$(cat "$target_dir/usr/lib/emonos/version")"
+done > "$data_stage/rauc/central.raucs"
 cp "$external_dir/app/docker-compose.yml" "$target_dir/opt/emonos/docker-compose.yml"
 cp "$lock_file" "$target_dir/opt/emonos/images.lock"
 mkdir -p "$target_dir/etc/systemd/system/multi-user.target.wants"
@@ -55,9 +61,7 @@ ln -sf ../etc-ssh.mount "$target_dir/etc/systemd/system/multi-user.target.wants/
 ln -sf ../emonos-preload.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-preload.service"
 ln -sf ../emonos-app.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-app.service"
 ln -sf ../emonos-persist.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-persist.service"
-if [ "$platform" = linux/amd64 ]; then
-    ln -sf ../mnt-boot.mount "$target_dir/etc/systemd/system/local-fs.target.wants/mnt-boot.mount"
-fi
+ln -sf ../mnt-boot.mount "$target_dir/etc/systemd/system/local-fs.target.wants/mnt-boot.mount"
 set --
 for service in web db redis mqtt; do
     source=$(get "$service.source")

@@ -22,7 +22,7 @@ fi
 case "$target" in
     x86-64-vm)
         export LG_QEMU_LAUNCHER="$test_dir/qemu-launch.py"
-        export LG_X86_DISK="$repo_dir/output/x86-64-vm/images/emonos-x86-64-vm.img"
+        export LG_X86_DISK="${EMONOS_QEMU_BASE_DISK:-$repo_dir/output/x86-64-vm/images/emonos-x86-64-vm.img}"
         export LG_X86_BIOS="$repo_dir/output/x86-64-vm/images/OVMF.fd"
         export LG_QEMU_MEMORY="${EMONOS_QEMU_MEMORY:-4G}"
         export LG_QEMU_CPU="${EMONOS_QEMU_CPU:-host}"

@@ -7,16 +7,106 @@ EmonOS is a minimal, immutable host OS for the emoncms container stack.
 The x86-64 VM and Raspberry Pi 4 both boot the seven-partition A/B layout
 with read-only squashfs system slots and a persistent data partition. The
 emoncms stack, data-partition growth, machine ID and SSH host keys survive
-reboot on both targets (WP4, T2/T3). RAUC updates and rollback are next.
+reboot on both targets (WP4, T2/T3). RAUC signed-bundle verification and
+slot reporting pass on both targets (WP5, T4). Signed A→B installs with data
+survival pass on both targets (WP6, T5); health-based commit and rollback
+remain WP7.
 See `Docs/emonos-poc-implementation-plan.md` for the PoC scope.
 
 ## Build the x86 VM image
 
 ```sh
+make rauc_dev_keys # once: development-only credentials under output/signing/
 make emonos_x86_64_vm
 ```
 
 The image is written to `output/x86-64-vm/images/emonos-x86-64-vm.img`.
+
+For the Pi, reuse the same signing credentials and run `make emonos_rpi4`.
+Its image is `output/rpi4/images/emonos-rpi4.img`.
+
+## RAUC development bundles (WP5)
+
+Each build also writes `output/<target>/images/emonos-<target>.raucb` and
+its SHA-256 file. The verity bundle contains the exact padded kernel and
+system payloads used in the disk image, plus a compatibility-check hook.
+The shared boot files, bootstate and data partitions are not updated.
+RAUC metadata lives under `/mnt/data/rauc`.
+
+`make rauc_dev_keys` is explicit and refuses to overwrite partial credentials.
+Keep `output/signing/dev-key.pem` private and backed up; only the public
+certificate is baked into the images. Set `EMONOS_RAUC_KEY_DIR` to reuse
+credentials outside the output tree. CI creates ephemeral credentials for
+that job, not keys trusted by local devices. Do not use this PoC signing
+setup for production. The device validates certificate lifetime at the
+authenticated bundle signing time because its clock may reset on boot;
+this is a development policy, not an anti-rollback mechanism.
+
+`EMONOS_VERSION` defaults to `0.1.0`; it sets both `/etc/os-release` and
+the bundle version. Repeated disk builds require the same certificate and
+version. Signed bundles are not expected to be byte-identical (signing time
+and random verity salt); their payload hashes must match the factory images.
+
+To verify the bundle inside the VM without installing it:
+
+```sh
+EMONOS_QEMU_RAUC_BUNDLE="$PWD/output/x86-64-vm/images/emonos-x86-64-vm.raucb" \
+EMONOS_QEMU_DISABLE_IO_URING=1 tests/run.sh x86-64-vm -k rauc
+```
+
+The harness attaches the bundle as a read-only second disk, copies it onto
+the disposable VM data partition, then runs `rauc info` with the baked
+keyring. On the Pi, copy its bundle onto `/mnt/data` (or mount removable
+media there) and set `EMONOS_RAUC_BUNDLE_PATH` to that target-side path when
+running the same tests over serial. No WP5 test installs or activates a slot.
+Alternatively set `EMONOS_RAUC_BUNDLE_URL` to a reachable local HTTP(S) URL:
+the serial-driven guest fetches the bundle, checks its SHA-256 against the
+local build, then verifies its signature. Serve only the public bundle, never
+the signing directory. This optional transfer path is not required for offline
+updates; the target-side file path works without networking.
+
+## WP6 update round trip (opt-in)
+
+`tests/test_rauc.py::test_update_round_trip` **writes the inactive OS slot and
+reboots**. Do not set `EMONOS_RUN_UPDATE_TEST=1` on hardware until the VM
+round trip is validated. First preserve the v1 x86 disk, then build v2 with
+the **same signing key** and a changed version:
+
+```sh
+mkdir -p output/wp6
+cp --reflink=auto --sparse=always \
+  output/x86-64-vm/images/emonos-x86-64-vm.img output/wp6/x86-v1.img
+EMONOS_VERSION=0.2.0 make emonos_x86_64_vm
+cp output/x86-64-vm/images/emonos-x86-64-vm.raucb output/wp6/x86-v2.raucb
+```
+
+The gated VM test boots the v1 copy with a disposable qcow2 overlay and
+provides the v2 bundle as a read-only disk:
+
+```sh
+EMONOS_RUN_UPDATE_TEST=1 EMONOS_QEMU_DISABLE_IO_URING=1 \
+EMONOS_QEMU_BASE_DISK="$PWD/output/wp6/x86-v1.img" \
+EMONOS_QEMU_RAUC_BUNDLE="$PWD/output/wp6/x86-v2.raucb" \
+EMONOS_V2_BUNDLE_HOST="$PWD/output/wp6/x86-v2.raucb" \
+tests/run.sh x86-64-vm -q -k update_round_trip
+```
+
+The output tree's default disk will be v2 after that build; keep the v1
+copy for repeatable tests. Restore a v1 factory image with a normal
+`make emonos_x86_64_vm` (without `EMONOS_VERSION`) after preserving the
+v2 bundle. Never point `EMONOS_QEMU_BASE_DISK` at the v2 disk for this test.
+
+For the physical Pi, stage the signed arm64 v2 bundle on `/mnt/data` and set
+`EMONOS_V2_BUNDLE_PATH=/mnt/data/wp6-v2.raucb`,
+`EMONOS_V2_BUNDLE_HOST` to the local bundle file,
+`EMONOS_PI_SERIAL` to the console, and the update gate. The optional
+`test_stage_pi_update_bundle` uses `EMONOS_V2_BUNDLE_URL` to copy only that
+public bundle from a temporary local server and checks its SHA-256/signature
+**without installing** it. The update itself requires no network connection.
+WP6 does not mark B good: the first B boot consumes its trial; a later reboot
+falls back to A until WP7 implements a health check. The normal factory
+`test_ab_layout` and `test_rauc_status` expect A and are not post-update
+checks while B is running.
 
 ## Run the x86 VM
 

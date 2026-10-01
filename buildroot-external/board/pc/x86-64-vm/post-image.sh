@@ -17,3 +17,4 @@ cp "${BOARD_DIR}/genimage.cfg.in" "${BINARIES_DIR}/genimage.cfg"
 "${EXTERNAL_DIR}/genimage/prepare-images.sh" "$BOARD_DIR" bzImage
 
 support/scripts/genimage.sh -c "${BINARIES_DIR}/genimage.cfg"
+"${EXTERNAL_DIR}/ota/bundle.sh" x86-64-vm

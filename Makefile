@@ -6,11 +6,16 @@ HOST_TOOLS := $(CURDIR)/tools/bin
 # A caller may override SOURCE_DATE_EPOCH to reproduce an older artifact.
 export SOURCE_DATE_EPOCH ?= $(shell git -C $(BUILDROOT_DIR) log -1 --format=%ct)
 export TZ := UTC
+export EMONOS_VERSION ?= 0.1.0
+export EMONOS_RAUC_KEY_DIR ?= $(OUTPUT_BASE)/signing
 
 X86_OUTPUT := $(OUTPUT_BASE)/x86-64-vm
 RPI4_OUTPUT := $(OUTPUT_BASE)/rpi4
 
-.PHONY: emonos_x86_64_vm emonos_rpi4 run_x86_64_vm clean_x86_64_vm
+.PHONY: emonos_x86_64_vm emonos_rpi4 run_x86_64_vm clean_x86_64_vm rauc_dev_keys
+
+rauc_dev_keys:
+	$(EXTERNAL_DIR)/ota/dev-keys.sh "$(EMONOS_RAUC_KEY_DIR)"
 
 emonos_x86_64_vm:
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(BUILDROOT_DIR) O=$(X86_OUTPUT) BR2_EXTERNAL=$(EXTERNAL_DIR) emonos_x86_64_vm_defconfig

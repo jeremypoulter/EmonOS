@@ -54,3 +54,4 @@ genimage \
     --inputpath "${BINARIES_DIR}" \
     --outputpath "${BINARIES_DIR}" \
     --config "${BINARIES_DIR}/genimage.cfg"
+"${EXTERNAL_DIR}/ota/bundle.sh" rpi4

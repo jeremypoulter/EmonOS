@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+printf 'RAUC_SYSTEM_VERSION=%s\n' "$(cat /usr/lib/emonos/version)"

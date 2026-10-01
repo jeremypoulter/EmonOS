@@ -1,9 +1,14 @@
+# Surface slot selection on the same serial console as the acceptance harness.
+serial --unit=0 --speed=115200
+terminal_input serial
+terminal_output serial
 set timeout=1
 set default=0
 
 set ORDER="A B"
 set A_OK=1
 set B_OK=0
+set A_TRY=0
 set B_TRY=0
 set MACHINE_ID=""
 load_env -f (hd0,gpt1)/EFI/BOOT/grubenv
@@ -12,18 +17,38 @@ if [ "$MACHINE_ID" = "" ]; then
     set boot_condition="systemd.condition-first-boot=true"
 fi
 
-# B gets one trial boot. A remains the known-good fallback until a health
-# service commits B (WP7). A failure to read grubenv defaults to A.
-if [ "$B_OK" = 1 -a "$B_TRY" = 0 ]; then
-    set default=1
-    set B_TRY=1
-    save_env -f (hd0,gpt1)/EFI/BOOT/grubenv B_TRY
-fi
+# Follow RAUC's native ORDER/OK/TRY variables in either update direction.
+# Only the primary consumes its trial; the known-good fallback remains
+# available. Factory A has no valid alternative, so normal reboots are safe
+# before WP7 adds health-based mark-good.
+set selected=""
+for SLOT in $ORDER; do
+    if [ "$selected" = "" ]; then
+        if [ "$SLOT" = A -a "$A_OK" = 1 -a "$A_TRY" = 0 ]; then
+            set default=0
+            set selected=A
+            if [ "$ORDER" = "A B" -a "$B_OK" = 1 ]; then
+                set A_TRY=1
+                save_env -f (hd0,gpt1)/EFI/BOOT/grubenv A_TRY
+            fi
+        fi
+        if [ "$SLOT" = B -a "$B_OK" = 1 -a "$B_TRY" = 0 ]; then
+            set default=1
+            set selected=B
+            if [ "$ORDER" = "B A" -a "$A_OK" = 1 ]; then
+                set B_TRY=1
+                save_env -f (hd0,gpt1)/EFI/BOOT/grubenv B_TRY
+            fi
+        fi
+    fi
+done
 
 menuentry "EmonOS slot A" {
+    echo "Booting Slot A"
     linux (hd0,gpt2)/bzImage root=PARTUUID=8d3d53e3-6d49-4c38-8349-aff6859e82fd rootfstype=squashfs rootwait ro console=ttyS0,115200 loglevel=3 rauc.slot=A systemd.machine_id=$MACHINE_ID $boot_condition
 }
 
 menuentry "EmonOS slot B" {
+    echo "Booting Slot B"
     linux (hd0,gpt4)/bzImage root=PARTUUID=a3ec664e-32ce-4665-95ea-7ae90ce9aa20 rootfstype=squashfs rootwait ro console=ttyS0,115200 loglevel=3 rauc.slot=B systemd.machine_id=$MACHINE_ID $boot_condition
 }

@@ -722,18 +722,73 @@ DATA-2; it does not prove state survives a full re-flash with the data partition
 
 ### WP5 — RAUC configuration and bundles (~1–2 weeks) → **T4**
 
+**Completed (2026-10-01):** both targets select Buildroot's RAUC 1.15.2
+with D-Bus and JSON, host RAUC, zstd-aware SquashFS tools and kernel
+loop/device-mapper/verity support. `ota/prepare-target.sh` renders the native
+GRUB/U-Boot configuration, embeds only the public development certificate,
+and stamps a common OS/bundle version. Development credentials are created
+explicitly by `make rauc_dev_keys`, shared across local target builds and
+never committed. CI generates its own ephemeral credentials once per job.
+
+The shared boot slot is **read-only**, and bundles carry only the exact
+padded `kernel.img` and `system.img` bytes used by genimage. RAUC 1.15's
+recommended `data-directory=/mnt/data/rauc` replaces the deprecated
+boot-partition `statusfile` proposed below. Factory data records the version
+of both populated slot pairs; it does not claim B is bootable. The development
+keyring validates certificates at authenticated signing time to accommodate
+the Pi's reset clock. Production clock, signing and anti-rollback policy
+remain outside this PoC. Disk repeatability uses a fixed certificate/version;
+signed-bundle repeatability is not claimed (random verity salt/signing time).
+
+Native boot variables now select primary/trial versus fallback in either
+direction; only the primary consumes a trial when a valid alternative exists.
+Factory A remains rebootable before WP7 introduces health-based commit.
+**x86 evidence (2026-10-01):** the full suite passes with a 10 GiB disposable disk, read-only
+bundle disk and gated reboot (24 passed, 2 skipped). This includes native
+slot/primary reporting, factory A good/B bad, public-key bundle verification,
+untrusted-signer rejection and extracted payload identity. The Pi build has
+passed its four host bundle/CRC/partition checks; resolved kernel configuration
+includes loop/device-mapper/verity. The final image booted on the physical Pi:
+normal suite **23 passed, 3 skipped** (reboot, historical offline preload and
+target-side bundle transfer are opt-in). The gated reboot test passed with the
+feed, machine ID, SSH key and no failed units unchanged. A locally served
+bundle was copied to the Pi with matching SHA-256; hardware T4 then passed
+**2/2** RAUC status and target-side `rauc info` checks using the baked keyring.
+RAUC reports slot A booted/primary/good and B inactive/bad with both pairs at
+the factory version. **T4 is met on x86 and Pi.** No install or activation was
+performed in WP5; WP6's A→B transition is not yet proven.
+Repeated local builds at fixed output paths and with the same certificate
+matched disk-image SHA-256 on both targets (2026-10-01):
+Pi `5c01481ac851ff46737c4ed8f4c546291d3e0df63995420521411109925ec754`;
+x86 `51f7e9b3809a3b575704608695decdb8f64fa5710ef095e8db4ac392368f2c2f`.
+The rebuilt Pi bundle also passed host-side verification, untrusted-signer
+rejection and exact payload comparison; the separate hardware checks above
+establish Pi runtime T4.
+
+The first local build exposed stale WP4 OpenSSL headers with
+`OPENSSL_NO_ENGINE`, despite RAUC selecting `BR2_PACKAGE_LIBOPENSSL_ENGINES`.
+Refresh OpenSSL, SquashFS and Linux configuration explicitly when moving an
+existing WP4 output tree to WP5; a clean output tree selects these features
+from the outset. This is not a RAUC source patch or a clean-build proof.
+The first T4 runtime check also exposed a missing GRUB `test` module: the
+factory VM could boot its populated-but-invalid B slot, which the earlier
+mount/application checks did not distinguish from A. EFI now embeds `test`
+and `echo`, and the A/B layout test explicitly asserts factory `rauc.slot=A`.
+
 1. Packages: `rauc`, `rauc-service` (D-Bus — the future supervisor's interface), host `rauc`.
-2. `scripts/rauc.sh`: generate the dev key if absent, append the cert to
-   `/etc/rauc/keyring.pem`, render `system.conf` from `ota/system.conf.in`, and on U-Boot
-   targets write `/etc/fw_env.config` pointing at `emonos-bootstate` (F2).
+2. Explicit `make rauc_dev_keys`, then `ota/prepare-target.sh`: install the public
+   cert as `/etc/rauc/keyring.pem`, render `system.conf` from `ota/system.conf.in`,
+   and retain the tested Pi `/etc/fw_env.config` at bootstate offset zero (F2).
 3. `system.conf` slot map, mirroring the reference structure [verified]:
-   `boot.0` (vfat, shared, `allow-mounted=true`), `kernel.0`/`kernel.1` (raw, `bootname=A`/`B`),
+   `boot.0` (vfat, shared, `readonly=true`), `kernel.0`/`kernel.1` (raw, `bootname=A`/`B`),
    `rootfs.0`/`rootfs.1` (raw, `parent=kernel.0`/`kernel.1`). `bootname` is on the *kernel*
-   slot, not the rootfs — the rootfs hangs off it. `statusfile` on the boot partition.
+   slot, not the rootfs — the rootfs hangs off it. Metadata in `/mnt/data/rauc`.
 4. Bootloader glue, both native RAUC backends, no custom script (PoC spec §3):
-   - **x86:** `bootloader=grub`, `grubenv=/mnt/boot/EFI/BOOT/grubenv`; `board/pc/grub.cfg`
-      implements `ORDER`/`A_OK`/`A_TRY` with one trial attempt, plus two rescue entries (OS-9 for free).
-   - **rpi4:** `bootloader=uboot`; `uboot-boot64.ush` reads/writes the raw bootstate env and
+    - **x86:** `bootloader=grub`, `grubenv=/mnt/boot/EFI/BOOT/grubenv`;
+       `board/pc/x86-64-vm/grub.cfg.in` implements `ORDER`/`A_OK`/`A_TRY`
+       with one trial attempt. Explicit rescue menu entries (OS-9) remain
+       to add alongside WP7's exhausted-slot policy; factory T4 is not a rollback proof.
+    - **rpi4:** `bootloader=uboot`; `board/raspberrypi/rpi4/boot.cmd` reads/writes the raw bootstate env and
      decrements `BOOT_A_LEFT`/`BOOT_B_LEFT`.
 5. `ota/manifest.raucm.in` — `format=verity`, images `kernel.img` and `rootfs.img` only;
    `install-check` hook asserting `compatible`. Keep shared `boot.vfat` factory-installed and
@@ -744,13 +799,74 @@ DATA-2; it does not prove state survives a full re-flash with the data partition
 **Verify:** **T4** — `rauc status` reports both slots with correct `bootname`, state and
 version on both targets. `rauc info` on the bundle verifies against the baked keyring.
 
-> With `rpi4-qemu` gone, the `uboot` half of step 4 is only ever exercised on the bench
-> (R12). Write it in WP5 with the rest, but treat it as unverified until WP9 runs.
+> With `rpi4-qemu` gone, the `uboot` half runs only on the physical bench
+> (R12). T4 verified slot reporting there; WP6 subsequently verified an A→B
+> install/boot and uncommitted B→A fallback. WP7 must still prove health-based
+> commitment and broken-update rollback.
 
 ### WP6 — The update round trip (~1 week) → **T5**
 
+**Completed (2026-10-01):** a gated `test_update_round_trip` uses the same
+signed v2 bundle and serial assertions on both targets. It refuses to install
+unless `EMONOS_RUN_UPDATE_TEST=1`, requires a matching local bundle hash,
+checks A is booted and B is the inactive install target, then expects the
+bootloader's literal `Booting Slot B` announcement on reboot. It compares the
+new `/etc/os-release`/RAUC version with `0.2.0`, retains the authenticated
+PHPFina feed, machine ID and SSH key, checks no failed units, and verifies the
+original A kernel/system bytes have not changed. The x86 boot files now
+configure a serial GRUB terminal; the announcement reached labgrid on the
+VM. WP7 will add health-based mark-good; WP6 tests the first trial boot into B
+and the expected fallback without a mark-good.
+
+**x86 evidence (2026-10-01):** the preserved v1 disk and the signed 0.2.0
+bundle passed the gated update round trip on a disposable qcow2 overlay.
+GRUB's `Booting Slot B` was observed on serial; RAUC reported B booted and
+both B images at 0.2.0, the original A partition hashes were unchanged,
+and the PHPFina feed checksum, machine ID and SSH host key survived. The
+authenticated app check passed after reboot. The first test iteration
+compared the feed hash *after* re-running `emonos-app-check`, which posts to
+the existing input/old feed; the assertion now compares immediately after
+reboot, before any new test writes. This was a test-ordering failure, not
+lost data.
+
+**Pi evidence (2026-10-01):** the v2 arm64 bundle, verified with the same
+development certificate, was staged on `/mnt/data` with a matching SHA-256.
+The first gated run installed into B and observed U-Boot's `Booting Slot B`,
+the 0.2.0 root and both B slot-status versions. It stopped on a test-only
+comparison polluted by boot-time kernel messages on the shared serial
+console. Read-only inspection of the running B system found active app/RAUC/
+SSH services, no failed units, a machine ID matching bootstate, existing
+PHPFina feeds, and A kernel/system hashes matching the preserved v1 factory
+image exactly. Its one B trial had been consumed (`BOOT_B_LEFT=0`). A software
+reboot returned to A/0.1.0 and passed the feed-preservation check. After
+filtering serial diagnostics from SHA output, a second gated A→B install and
+reboot passed **1/1**: unchanged original feed, machine ID, SSH host key and
+A bytes; working authenticated app on B/0.2.0; no failed units. This is
+**T5 on both targets**. The live Pi is left on an **uncommitted B trial**;
+its next reboot is expected to select A. No Power1 relay test or health
+service mark-good is implied.
+After preserving the v2 bundles under ignored `output/wp6/`, both local
+default images were restored to v1 and matched their factory SHA-256 values
+(x86 `1326a84f87ca1e1222580fc532bbe005884e799823895ecce1e043909897036c`,
+Pi `5c01481ac851ff46737c4ed8f4c546291d3e0df63995420521411109925ec754`).
+The complete x86 v1 suite then passed **24 tests, 4 skipped** (the gated
+update/staging and historical offline preload cases were not enabled),
+including the gated reboot and read-only bundle check.
+
+The factory v1 disk **must be preserved before** a v2 rebuild in the same
+Buildroot output tree, as `make` overwrites the assembled disk image. The
+test uses a disposable overlay backed by that v1 copy and attaches the v2
+bundle as a separate read-only virtio disk. The Pi test requires an already
+flashed v1 card and a v2 bundle file placed on `/mnt/data`; it will not
+reflash the card. An optional `test_stage_pi_update_bundle` downloads only
+the public bundle over the local bench network and checks the hash and
+signature **without installing** it. The install test is not part of the
+normal suite without the gate.
+
 1. Build v2 with a visibly different `/etc/os-release` version (PoC spec §8).
-2. Deliver it as a second disk / a file on the data partition (PoC spec §9.1) — no network.
+2. Deliver it as a second disk / a file on the data partition (PoC spec §9.1).
+   Local HTTP was used solely to stage the Pi test file; RAUC installed and
+   verified that local file without a network dependency.
 3. `rauc install` → reboot → assert the other slot and the new version, feed intact.
 4. Harness: `expect` on the bootloader's slot announcement so the test knows which slot came
    up rather than inferring it. The reference expects a literal `Booting \`Slot ` string
@@ -842,8 +958,8 @@ builds.
 | WP2 | Docker, both targets — **T1** | 3 wk |
 | WP3 | emoncms on a writable root | 4 wk |
 | WP4 | **DONE 2026-09-30** — A/B, squashfs, data partition; **T2, T3** on x86 and Pi | 5.5 wk |
-| WP5 | RAUC, bundles — **T4** | 7 wk |
-| WP6 | Update round trip — **T5** | 8 wk |
+| WP5 | **DONE 2026-10-01** — RAUC, signed bundles; **T4** on x86 and Pi | 7 wk |
+| WP6 | **DONE 2026-10-01** — signed A→B round trip and data survival; **T5** on x86 and Pi | 8 wk |
 | WP7 | Health check, rollback, power cut — **T6, T7** | 9.5 wk |
 | WP8 | Harness — **T8** | 10 wk |
 | WP9 | Real hardware — the `rpi4` half of T1 and T4–T7 | runs alongside WP2–WP8, no longer additive |

@@ -150,6 +150,7 @@ def test_app_stack(command) -> None:
 @pytest.mark.timeout(600)
 def test_ab_layout(command) -> None:
     """WP4: both targets boot slot A with read-only system and persistent data."""
+    command.run_check("grep -q 'rauc.slot=A' /proc/cmdline")
     command.run_check("grep -q ' / squashfs ro,' /proc/mounts")
     command.run_check("grep -q ' /var tmpfs ' /proc/mounts")
     mounts = command.run_check("grep -E ' / | /var | /mnt/data | /var/lib/docker ' /proc/mounts")

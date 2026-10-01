@@ -146,6 +146,16 @@ def main() -> int:
                 raise RuntimeError("no virtio disk to protect with a qcow2 overlay")
 
             command = [qemu, *replace_virtio_drive(arguments, overlay)]
+            # Optional transport for T4: expose the host bundle read-only as
+            # the second virtio disk. This is not an update/install operation.
+            if bundle := os.environ.get("EMONOS_QEMU_RAUC_BUNDLE"):
+                command.extend([
+                    "-blockdev",
+                    f"driver=file,filename={bundle},aio=threads,node-name=bundlefile,read-only=on",
+                    "-blockdev",
+                    "driver=raw,file=bundlefile,node-name=bundledisk,read-only=on",
+                    "-device", "virtio-blk-pci,drive=bundledisk",
+                ])
             if os.environ.get("EMONOS_QEMU_DISABLE_IO_URING") == "1":
                 command = [
                     "strace", "-f", "-qq", "-e", "trace=io_uring_setup", "-e",
