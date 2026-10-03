@@ -876,6 +876,101 @@ normal suite without the gate.
 
 ### WP7 — Health check, commit, rollback (~1–2 weeks) → **T6, T7**
 
+**T6 proven on both targets (2026-10-03); WP7 remains in progress for T7.**
+`emonos-health.service` starts independently
+of Compose and polls a separate non-sample-writing authenticated health
+probe with a fixed 300-second `/proc/uptime` deadline. The probe requires
+successful HTTP, successful authentication and a JSON feed-list array with
+expected fields; login HTML, error objects and malformed entries fail.
+`jq` supplies strict JSON parsing. Factory provisioning uses the existing
+PoC account/password only when authentication definitively fails; production
+credential onboarding remains out of scope. No input sample/process/feed is
+created by this health probe.
+The initial x86 runtime attempt took its bounded failure/reboot path because
+the stock BusyBox configuration lacked `timeout`. Both defconfigs now
+explicitly merge `busybox-health.config` to enable it, and the target test
+checks runtime tool presence before waiting. Buildroot's jq omits Oniguruma
+by default, so the probe uses strict character checks instead of regex
+functions. These fixes preserve the 300-second deadline and JSON validation;
+they are not relaxed health criteria. The corrected x86 factory image then
+passed the authenticated probe and mark-good. Watchdog device presence was
+confirmed, but the activation assertion exposed disabled `WATCHDOG_SYSFS`;
+the common kernel fragment now enables its state interface. After rebuilding,
+**2/2 x86 factory checks passed**: health commit and active watchdog with
+PID1's 30-second feed configuration. The preserved WP7 v1 disk is
+`output/wp7/x86-v1-health.img` with SHA-256
+`528a6fad3e7e6a9508087ba1c86c8a09e608a21f1cd17fea24fa8332b680e6eb`.
+Healthy/broken v2 bundles both verified against the development keyring.
+The healthy update passed **1/1**: B marked itself good and remained selected
+after a second reboot with the feed, machine ID, SSH key and A payloads
+unchanged. The broken update passed **1/1 T6**: B booted fully, its slot-local
+app unit failed, and the monitor recorded the five-minute failure then
+rebooted autonomously into A (no host reboot request after B started). A
+committed itself as healthy; the original feed/identity/SSH/A bytes survived.
+**X86 HC-1/HC-3/T6 is proven locally.** T7 on both targets remains pending.
+The default x86 build was restored to healthy v1 and
+the Pi WP7 factory image has built. Its four host bundle/CRC/partition checks
+passed and its resolved kernel enables dm-verity, watchdog sysfs and the
+BCM2835 driver; the image includes timeout/jq and the independent health
+unit. The restored x86 image then passed the full suite (**37 passed,
+6 skipped**) with growth, reboot and signed-bundle checks enabled.
+Pi healthy/broken bundles both verify against the same development keyring.
+Restoring the normal factory build after fault injection reproduced its
+original SHA-256, and the four host checks passed again. The image to flash
+is `output/rpi4/images/emonos-rpi4.img`, SHA-256
+`63bdae6cc8fb5f45c1c618f7820bcecde658375fabc15faa4b4c2e6f1f6eb072`.
+The preserved test bundles are `output/wp7/rpi4-v2-healthy.raucb` and
+`output/wp7/rpi4-v2-broken.raucb`.
+
+**Pi evidence (2026-10-03):** the flashed WP7 image passed the normal suite
+**36 passed, 8 skipped**, including autonomous factory commit and an active
+BCM2835 watchdog with a 30-second hardware timeout. The healthy update passed
+**1/1**: B committed, stayed selected for a second boot and retained the
+feed/identity/SSH/A bytes, then explicitly returned to A for the next test.
+The final broken-update run passed **1/1 T6**: B booted, its app failed, its
+monitor wrote a 300-second failure record and rebooted to A without a host
+request; A committed, and all original data/identity/A bytes survived.
+Eight post-recovery runtime/app/layout/growth/identity/watchdog/health/reboot
+checks then passed on A. The changed login handling was also regression-tested
+with another passing x86 T6 run.
+
+**Failures retained in the evidence:** an earlier Pi run completed installation
+but lost a status command after a UART input overrun. Another reached B but
+lost shell reactivation amid boot logs. The harness now paces Pi input at
+1 ms/byte and lets ShellDriver perform post-reboot login/kernel-console
+handling, rather than manually logging in before activation. On that earlier
+run B did autonomously fall back, but A's app also exceeded its 300-second
+deadline once and caused an additional reboot. A recovered and committed
+without intervention; the extra A timeout remains unexplained. Database
+inspection on the recovered boot showed healthy MariaDB, no observed
+undervoltage/ext4 error and an active watchdog. No deadline was extended,
+no mark-good was forced and no data was reset. Keep this startup-variance
+issue visible during later interruption tests; a clean T6 pass does not
+explain away the earlier A timeout.
+
+Success must include a successful `rauc status mark-good`, then a durable
+`/mnt/data/health/last-good.json` with the current boot ID. Failure (including
+mark-good failure) records version, slot, boot ID, monotonic elapsed time
+and reason under `/mnt/data/health/failures/` before requesting reboot.
+systemd's unit timeout is an additional backstop. Runtime watchdog feeding
+is configured at 30 s with an i6300ESB QEMU device/driver and the Pi's BCM2835
+watchdog driver; activation must be checked on the target.
+
+`EMONOS_APP_FAULT=fail-start` generates **only** the slot-local application
+unit override for broken bundles; a subsequent normal build removes it.
+The persisted Compose, images, database and monitor are unchanged. Host
+tests cover JSON rejection, the fixed deadline, mark-good failure and fault
+cleanup. Gated target tests cover healthy B committing and surviving a
+second boot, and broken B booting fully then autonomously returning to A
+with a five-minute failure record and unchanged feed/identity/A payloads.
+The optional Pi bundle staging test checks the downloaded public file's hash
+and signature without installing it. `EMONOS_WP7_RESTORE_A=1` explicitly
+returns to factory A after the healthy test's two B boots so the broken-B
+test can follow on the same card; no reflash or factory-data reset is used.
+**Pending:** Power1 bench verification and interrupted-install T7 on both
+targets. The live Pi is left healthy and committed on A/0.1.0; broken B is
+ineligible for boot. No Power1 relay operation has occurred during WP7.
+
 1. `emonos-health.service` → `/usr/libexec/emonos/health-check`: start independently of a
    successful Compose start and poll for no more than five monotonic minutes. Require bounded
    HTTP success plus the authenticated, expected-shape feed-list response from WP3; reject
@@ -960,7 +1055,7 @@ builds.
 | WP4 | **DONE 2026-09-30** — A/B, squashfs, data partition; **T2, T3** on x86 and Pi | 5.5 wk |
 | WP5 | **DONE 2026-10-01** — RAUC, signed bundles; **T4** on x86 and Pi | 7 wk |
 | WP6 | **DONE 2026-10-01** — signed A→B round trip and data survival; **T5** on x86 and Pi | 8 wk |
-| WP7 | Health check, rollback, power cut — **T6, T7** | 9.5 wk |
+| WP7 | **T6 DONE 2026-10-03** on x86/Pi; health commit/watchdog pass; **T7 pending** | 9.5 wk |
 | WP8 | Harness — **T8** | 10 wk |
 | WP9 | Real hardware — the `rpi4` half of T1 and T4–T7 | runs alongside WP2–WP8, no longer additive |
 

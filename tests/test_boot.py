@@ -231,7 +231,7 @@ def test_feed_survives_reboot(command, target) -> None:
     # Do not reactivate against the *old* shell prompt before shutdown starts.
     # Wait for a new login prompt, then log in and let ShellDriver reinject run().
     command.console.expect("emonos login: ", timeout=180)
-    command.console.sendline("root")
+    command.console.sendline("")
     target.activate(command)
     assert command.poll_until_success(
         "systemctl is-active --quiet emonos-app.service",

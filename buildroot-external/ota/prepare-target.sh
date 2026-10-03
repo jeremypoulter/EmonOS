@@ -5,6 +5,19 @@ target=${1:?missing target directory}
 directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 keys=${EMONOS_RAUC_KEY_DIR:?run make rauc_dev_keys and build via the top-level Makefile}
 version=${EMONOS_VERSION:?missing EMONOS_VERSION}
+fault=${EMONOS_APP_FAULT:-none}
+fault_file="$target/etc/systemd/system/emonos-app.service.d/wp7-fault.conf"
+case "$fault" in
+    none)
+        rm -f "$fault_file"
+        rmdir "$(dirname "$fault_file")" 2>/dev/null || true
+        ;;
+    fail-start)
+        mkdir -p "$(dirname "$fault_file")"
+        printf '[Service]\nExecStart=\nExecStart=/bin/false\n' > "$fault_file"
+        ;;
+    *) echo 'Unknown EmonOS application fault' >&2; exit 1 ;;
+esac
 case "$version" in
     ''|*[!a-zA-Z0-9._+-]*) echo 'Invalid EmonOS version' >&2; exit 1 ;;
 esac

@@ -60,6 +60,27 @@ def test_dev_keys_refuse_incomplete_credentials(tmp_path):
     assert not (tmp_path / "dev-cert.pem").exists()
 
 
+def test_slot_local_fault_does_not_survive_next_normal_build(tmp_path):
+    target = tmp_path / "target"
+    (target / "etc").mkdir(parents=True)
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    (keys / "dev-cert.pem").write_text("public certificate")
+    (keys / "dev-key.pem").write_text("private key")
+    config = tmp_path / "config"
+    config.write_text("BR2_x86_64=y\n")
+    environment = {**os.environ, "BR2_CONFIG": str(config),
+                   "EMONOS_RAUC_KEY_DIR": str(keys), "EMONOS_VERSION": "0.2.0-broken",
+                   "EMONOS_APP_FAULT": "fail-start"}
+    subprocess.run([str(OTA / "prepare-target.sh"), str(target)], env=environment, check=True)
+    fault = target / "etc/systemd/system/emonos-app.service.d/wp7-fault.conf"
+    assert "ExecStart=/bin/false" in fault.read_text()
+    assert not (target / "mnt/data").exists()
+    environment.update(EMONOS_APP_FAULT="none", EMONOS_VERSION="0.1.0")
+    subprocess.run([str(OTA / "prepare-target.sh"), str(target)], env=environment, check=True)
+    assert not fault.parent.exists()
+
+
 @pytest.mark.parametrize("system,bundle,expected", [
     ("emonos-rpi4", "emonos-rpi4", 0),
     ("emonos-rpi4", "emonos-x86-64-vm", 10),

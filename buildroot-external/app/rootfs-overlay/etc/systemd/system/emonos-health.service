@@ -1,0 +1,16 @@
+[Unit]
+Description=EmonOS bounded application health and slot commit
+Wants=rauc.service
+After=local-fs.target rauc.service
+RequiresMountsFor=/mnt/data
+FailureAction=reboot
+# Deliberately no Requires/After=emonos-app: failure there must not prevent us.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/emonos-health
+RemainAfterExit=yes
+TimeoutStartSec=315
+
+[Install]
+WantedBy=multi-user.target

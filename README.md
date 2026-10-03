@@ -9,8 +9,8 @@ with read-only squashfs system slots and a persistent data partition. The
 emoncms stack, data-partition growth, machine ID and SSH host keys survive
 reboot on both targets (WP4, T2/T3). RAUC signed-bundle verification and
 slot reporting pass on both targets (WP5, T4). Signed A→B installs with data
-survival pass on both targets (WP6, T5); health-based commit and rollback
-remain WP7.
+survival pass on both targets (WP6, T5). Health-based commit and autonomous
+broken-update rollback pass on both (WP7, T6); interrupted-install T7 remains.
 See `Docs/emonos-poc-implementation-plan.md` for the PoC scope.
 
 ## Build the x86 VM image
@@ -103,10 +103,48 @@ For the physical Pi, stage the signed arm64 v2 bundle on `/mnt/data` and set
 `test_stage_pi_update_bundle` uses `EMONOS_V2_BUNDLE_URL` to copy only that
 public bundle from a temporary local server and checks its SHA-256/signature
 **without installing** it. The update itself requires no network connection.
-WP6 does not mark B good: the first B boot consumes its trial; a later reboot
-falls back to A until WP7 implements a health check. The normal factory
+The WP6 test itself does not mark B good. On older WP6 images, its first B
+boot consumes the trial and a later reboot falls back to A. New WP7 images
+enable the health service, which can commit B autonomously. The normal factory
 `test_ab_layout` and `test_rauc_status` expect A and are not post-update
 checks while B is running.
+
+## WP7 health and rollback (T6 validated on both targets)
+
+New builds enable an autonomous five-minute health monitor. It checks local
+HTTP, authenticates the existing PoC `emonospoc` account, validates the feed
+list JSON shape, and marks the booted slot good only after those checks pass.
+On an empty factory database it provisions the same test account/password;
+this is development-only credential handling. Unlike `emonos-app-check`,
+the probe does not post samples or modify feed/process data.
+
+Successful commit evidence is `/mnt/data/health/last-good.json`; failure
+records are `/mnt/data/health/failures/<boot-id>.json`, written and synced
+before reboot. PID1 feeds a 30-second runtime watchdog where supported.
+Do not use these development signing/account defaults for a product image.
+
+Build a broken-but-bootable update with
+`EMONOS_VERSION=0.2.0-broken EMONOS_APP_FAULT=fail-start make emonos_x86_64_vm`.
+The fault overrides only the slot-local app service, not persistent data.
+Preserve a WP7 factory v1 disk and the bundles before rebuilding; normal
+builds remove the fault. Gated tests in `tests/test_rollback.py` use
+`EMONOS_RUN_COMMIT_TEST=1` or `EMONOS_RUN_ROLLBACK_TEST=1`, with
+`EMONOS_WP7_BUNDLE_HOST` pointing at the corresponding bundle and the same
+file attached through `EMONOS_QEMU_RAUC_BUNDLE`. Rollback tests wait for the
+device's own failure reboot—no host reboot command after B is running.
+These tests write the inactive slot; hardware testing follows VM validation.
+For Pi tests, `test_stage_pi_health_bundle` can fetch only the public bundle
+using `EMONOS_WP7_BUNDLE_URL` and verify it without installing. Then set
+`EMONOS_WP7_BUNDLE_PATH=/mnt/data/wp7-staged.raucb` for the gated install.
+Use `EMONOS_WP7_RESTORE_A=1` with the healthy-update test when you want it
+to return explicitly to factory A after proving two committed B boots, so
+the broken-B rollback test can follow without reflashing the card.
+Both the local x86 VM and physical Pi passed factory commit/watchdog checks, healthy B
+commitment through a second reboot, and broken B's autonomous five-minute
+rollback to A with data intact. Interrupted-install T7 remains pending on
+both targets. An earlier Pi fallback boot exceeded the health deadline once
+before recovering on its next boot; that startup-variance issue remains
+unexplained and is recorded in the implementation plan.
 
 ## Run the x86 VM
 

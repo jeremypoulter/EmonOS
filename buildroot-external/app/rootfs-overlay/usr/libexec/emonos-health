@@ -1,0 +1,56 @@
+#!/bin/sh
+set -eu
+umask 077
+clock() { cut -d. -f1 /proc/uptime; }
+started=$(clock)
+deadline=$((started + 300))
+version=$(cat /usr/lib/emonos/version)
+slot=$(sed -n 's/.*rauc.slot=\([AB]\).*/\1/p' /proc/cmdline)
+test -n "$slot"
+boot_id=$(cat /proc/sys/kernel/random/boot_id)
+directory=/mnt/data/health
+mkdir -p "$directory/failures"
+chmod 700 "$directory" "$directory/failures"
+reason='application did not become healthy'
+probe_log=/run/emonos-health-probe.log
+
+record() {
+    destination=$1
+    outcome=$2
+    elapsed=$(($(clock) - started))
+    jq -n --arg version "$version" --arg slot "$slot" --arg boot_id "$boot_id" \
+        --arg outcome "$outcome" --arg reason "$reason" --argjson elapsed "$elapsed" \
+        '{version:$version,slot:$slot,boot_id:$boot_id,outcome:$outcome,
+          elapsed_seconds:$elapsed,reason:$reason}' > "$destination.tmp"
+    mv "$destination.tmp" "$destination"
+    sync
+}
+
+while :; do
+    remaining=$((deadline - $(clock)))
+    [ "$remaining" -gt 0 ] || break
+    if timeout "$remaining" /usr/libexec/emonos-health-probe >"$probe_log" 2>&1; then
+        remaining=$((deadline - $(clock)))
+        [ "$remaining" -gt 0 ] || break
+        if timeout "$remaining" rauc status mark-good >"$probe_log" 2>&1; then
+            reason='authenticated application checks passed; slot marked good'
+            record "$directory/last-good.json" good
+            echo "EmonOS health: committed slot $slot version $version"
+            exit 0
+        fi
+        reason='RAUC mark-good failed'
+        break
+    fi
+    reason=$(tail -1 "$probe_log" | cut -c1-240)
+    [ -n "$reason" ] || reason='health probe timed out'
+    remaining=$((deadline - $(clock)))
+    [ "$remaining" -gt 0 ] || break
+    pause=5
+    [ "$remaining" -ge "$pause" ] || pause=$remaining
+    sleep "$pause"
+done
+
+record "$directory/failures/$boot_id.json" failed
+echo "EmonOS health: slot $slot version $version failed: $reason" >&2
+systemctl reboot
+exit 1

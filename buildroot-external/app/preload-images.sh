@@ -61,6 +61,7 @@ ln -sf ../etc-ssh.mount "$target_dir/etc/systemd/system/multi-user.target.wants/
 ln -sf ../emonos-preload.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-preload.service"
 ln -sf ../emonos-app.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-app.service"
 ln -sf ../emonos-persist.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-persist.service"
+ln -sf ../emonos-health.service "$target_dir/etc/systemd/system/multi-user.target.wants/emonos-health.service"
 ln -sf ../mnt-boot.mount "$target_dir/etc/systemd/system/local-fs.target.wants/mnt-boot.mount"
 set --
 for service in web db redis mqtt; do

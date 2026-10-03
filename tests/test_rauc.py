@@ -189,6 +189,13 @@ def test_update_round_trip(command, target, target_name: str) -> None:
         "systemctl is-active --quiet emonos-app.service", tries=150,
         timeout=600.0, sleepduration=4,
     )
+    # WP7 images have a concurrent boot-commit service. Finish that before
+    # asking RAUC to install; older WP6 images intentionally have no monitor.
+    assert command.poll_until_success(
+        "test ! -x /usr/libexec/emonos-health || "
+        "systemctl is-active --quiet emonos-health.service",
+        tries=80, timeout=315.0, sleepduration=4,
+    )
     test_user = os.environ.get("EMONOS_APP_TEST_USER", "")
     command.run_check(
         f"EMONOS_APP_TEST_USER={shlex.quote(test_user)} /usr/libexec/emonos-app-check",
@@ -227,7 +234,7 @@ def test_update_round_trip(command, target, target_name: str) -> None:
     # Serial announcement comes from GRUB/U-Boot, before systemd login.
     command.console.expect("Booting Slot B", timeout=180)
     command.console.expect("emonos login: ", timeout=180)
-    command.console.sendline("root")
+    command.console.sendline("")
     target.activate(command)
 
     assert command.run_check("cat /usr/lib/emonos/version") == ["0.2.0"]

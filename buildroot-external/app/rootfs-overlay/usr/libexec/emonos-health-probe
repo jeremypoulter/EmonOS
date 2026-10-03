@@ -1,0 +1,39 @@
+#!/bin/sh
+# Read-only authenticated probe, except initial PoC account provisioning.
+# This PoC uses the existing test account; not a production credential policy.
+set -eu
+umask 077
+base=http://127.0.0.1
+user=${EMONOS_APP_TEST_USER:-emonospoc}
+password=poc-password-123
+work=$(mktemp -d "${TMPDIR:-/run}/emonos-probe.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+fail() { echo "$1" >&2; exit 1; }
+systemctl is-active --quiet emonos-app.service || fail 'application service not active'
+curl -fsS --max-time 5 -H 'Cache-Control: no-cache' "$base/" \
+    -o /dev/null || fail 'HTTP request failed'
+curl -fsS --max-time 5 -X POST --data-urlencode "username=$user" \
+    --data-urlencode "password=$password" "$base/user/auth.json" \
+    -o "$work/auth.json" || fail 'authentication request failed'
+if ! jq -e '.success == true' "$work/auth.json" >/dev/null 2>&1; then
+    # Only a definite unsuccessful auth response permits factory provisioning.
+    jq -e 'type == "object" and .success == false' "$work/auth.json" \
+        >/dev/null 2>&1 || fail 'authentication response is not valid JSON success'
+    curl -fsS --max-time 5 -X POST --data-urlencode "username=$user" \
+        --data-urlencode "password=$password" --data-urlencode "email=$user@example.invalid" \
+        "$base/user/register.json" -o "$work/auth.json" || fail 'factory registration failed'
+fi
+key=$(jq -er 'select(.success == true) | (.apikey_read // .apikey_write) |
+    select(type == "string" and length == 32 and
+      (explode | all(.[]; (. >= 48 and . <= 57) or
+        (. >= 65 and . <= 70) or (. >= 97 and . <= 102))))' "$work/auth.json") || \
+    fail 'authentication did not return an API key'
+curl -fsS --max-time 5 -H 'Cache-Control: no-cache' -G "$base/feed/list.json" \
+    --data-urlencode "apikey=$key" --data-urlencode "_health=$(cat /proc/uptime)" \
+    -o "$work/feeds.json" || fail 'authenticated feed-list request failed'
+jq -e 'def digits: tostring | length > 0 and
+      (explode | all(.[]; . >= 48 and . <= 57));
+    type == "array" and all(.[];
+    type == "object" and (.id | digits) and
+    (.name | type == "string") and (.engine | digits))' \
+    "$work/feeds.json" >/dev/null 2>&1 || fail 'feed-list response has unexpected shape'

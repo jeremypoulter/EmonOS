@@ -8,9 +8,12 @@ targets:
         port: !template "$LG_SERIAL_DEVICE"
         speed: 115200
     drivers:
-      SerialDriver: {}
+      SerialDriver:
+        # Pace input during kernel/audit bursts; output remains at 115200.
+        txdelay: 0.001
       ShellDriver:
         prompt: "# "
         login_prompt: "emonos login: "
         username: root
         login_timeout: 300
+        post_login_settle_time: 2

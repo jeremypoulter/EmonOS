@@ -7,6 +7,7 @@ HOST_TOOLS := $(CURDIR)/tools/bin
 export SOURCE_DATE_EPOCH ?= $(shell git -C $(BUILDROOT_DIR) log -1 --format=%ct)
 export TZ := UTC
 export EMONOS_VERSION ?= 0.1.0
+export EMONOS_APP_FAULT ?= none
 export EMONOS_RAUC_KEY_DIR ?= $(OUTPUT_BASE)/signing
 
 X86_OUTPUT := $(OUTPUT_BASE)/x86-64-vm
@@ -26,7 +27,7 @@ emonos_rpi4:
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(RPI4_OUTPUT)
 
 run_x86_64_vm: emonos_x86_64_vm
-	qemu-system-x86_64 -machine q35 -accel kvm -cpu host -m 4096M -display none -serial mon:stdio -bios $(X86_OUTPUT)/images/OVMF.fd -drive file=$(X86_OUTPUT)/images/emonos-x86-64-vm.img,if=virtio,format=raw,snapshot=on,aio=threads -nic user,model=virtio-net-pci
+	qemu-system-x86_64 -machine q35 -accel kvm -cpu host -m 4096M -display none -serial mon:stdio -bios $(X86_OUTPUT)/images/OVMF.fd -drive file=$(X86_OUTPUT)/images/emonos-x86-64-vm.img,if=virtio,format=raw,snapshot=on,aio=threads -nic user,model=virtio-net-pci -device i6300esb -watchdog-action reset
 
 clean_x86_64_vm:
 	$(MAKE) -C $(BUILDROOT_DIR) O=$(X86_OUTPUT) clean
