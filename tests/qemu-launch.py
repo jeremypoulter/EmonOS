@@ -2,6 +2,8 @@
 """Launch QEMU with EmonOS-specific resource checks and targeted retries."""
 
 import os
+import json
+from contextlib import nullcontext
 import signal
 import socket
 import subprocess
@@ -39,7 +41,8 @@ def run_image_command(arguments: list[str]) -> None:
     subprocess.run(command, check=True)
 
 
-def replace_virtio_drive(arguments: list[str], overlay_path: str | None = None) -> list[str]:
+def replace_virtio_drive(arguments: list[str], overlay_path: str | None = None,
+                         throttle: bool = False, overlay_format: str = "qcow2") -> list[str]:
     result: list[str] = []
     index = 0
     while index < len(arguments):
@@ -50,17 +53,21 @@ def replace_virtio_drive(arguments: list[str], overlay_path: str | None = None) 
             if options.get("if") == "virtio" and "file" in options:
                 aio = options.get("aio", "threads")
                 filename = overlay_path or options["file"]
-                disk_format = "qcow2" if overlay_path else options.get("format", "raw")
+                disk_format = overlay_format if overlay_path else options.get("format", "raw")
                 result.extend(
                     [
                         "-blockdev",
                         f"driver=file,filename={filename},aio={aio},node-name=vmfile",
                         "-blockdev",
                         f"driver={disk_format},file=vmfile,node-name=vmdisk",
-                        "-device",
-                        "virtio-blk-pci,drive=vmdisk",
                     ]
                 )
+                if throttle:
+                    result.extend([
+                        "-object", "throttle-group,id=emonos-iolimit",
+                        "-blockdev", "driver=throttle,throttle-group=emonos-iolimit,file=vmdisk,node-name=limiteddisk",
+                    ])
+                result.extend(["-device", f"virtio-blk-pci,drive={'limiteddisk' if throttle else 'vmdisk'}"])
                 index += 2
                 continue
         result.append(arguments[index])
@@ -126,9 +133,13 @@ def main() -> int:
         )
         return 1
 
-    with tempfile.TemporaryDirectory(prefix="emonos-qemu-", dir=overlay_directory()) as tmpdir:
+    state_dir = os.environ.get("EMONOS_QEMU_STATE_DIR")
+    context = nullcontext(state_dir) if state_dir else tempfile.TemporaryDirectory(
+        prefix="emonos-qemu-", dir=overlay_directory(),
+    )
+    with context as tmpdir:
         for attempt in range(1, MAX_ATTEMPTS + 1):
-            overlay = f"{tmpdir}/disk.qcow2"
+            overlay = f"{tmpdir}/disk.raw" if state_dir else f"{tmpdir}/disk.qcow2"
             for index, argument in enumerate(arguments[:-1]):
                 if argument != "-drive":
                     continue
@@ -136,16 +147,42 @@ def main() -> int:
                     field.split("=", 1) for field in arguments[index + 1].split(",") if "=" in field
                 )
                 if options.get("if") == "virtio" and "file" in options:
-                    run_image_command([
-                        "create", "-q", "-f", "qcow2", "-F", "raw", "-b", options["file"], overlay,
-                    ])
-                    if disk_size := os.environ.get("EMONOS_QEMU_DISK_SIZE"):
-                        run_image_command(["resize", "-q", "-f", "qcow2", overlay, disk_size])
+                    metadata = {"backing": os.path.realpath(options["file"]),
+                                "size": os.environ.get("EMONOS_QEMU_DISK_SIZE"),
+                                "format": "raw" if state_dir else "qcow2"}
+                    state_file = f"{tmpdir}/state.json"
+                    if state_dir and os.path.exists(overlay):
+                        with open(state_file, encoding="utf-8") as saved:
+                            if json.load(saved) != metadata:
+                                raise RuntimeError("persistent QEMU state does not match backing disk/size")
+                    else:
+                        if state_dir:
+                            if os.path.exists(state_file):
+                                raise RuntimeError("persistent state metadata exists without its disk")
+                            # A raw test clone models direct slot writes, not
+                            # qcow2 mapping-cache commits lost with QEMU RAM.
+                            subprocess.run(["cp", "--reflink=auto", "--sparse=always",
+                                            options["file"], overlay], check=True)
+                        else:
+                            run_image_command([
+                                "create", "-q", "-f", "qcow2", "-F", "raw", "-b", options["file"], overlay,
+                            ])
+                        if disk_size := metadata["size"]:
+                            run_image_command(["resize", "-q", "-f", metadata["format"], overlay, disk_size])
+                        if state_dir:
+                            with open(state_file, "w", encoding="utf-8") as saved:
+                                json.dump(metadata, saved)
                     break
             else:
                 raise RuntimeError("no virtio disk to protect with a qcow2 overlay")
 
-            command = [qemu, *replace_virtio_drive(arguments, overlay)]
+            # Persistent state is test-scoped for a real kill/restart. Never
+            # allow -snapshot to silently make crash recovery discard writes.
+            launch_args = [item for item in arguments if item != "-snapshot"] if state_dir else arguments
+            command = [qemu, *replace_virtio_drive(launch_args, overlay, throttle=bool(state_dir),
+                                                  overlay_format="raw" if state_dir else "qcow2")]
+            if state_dir:
+                command.extend(["-pidfile", f"{state_dir}/qemu.pid"])
             command.extend(["-device", "i6300esb", "-watchdog-action", "reset"])
             # Optional transport for T4: expose the host bundle read-only as
             # the second virtio disk. This is not an update/install operation.
@@ -164,11 +201,16 @@ def main() -> int:
                 ]
             returncode, stderr = run_once(command)
             if returncode == 0:
-                return returncode
+                return 0
+            if state_dir and returncode in (-signal.SIGKILL, 128 + signal.SIGKILL):
+                # T7 intentionally killed a running QEMU. Do not enqueue a
+                # dummy serial connection which would poison the next boot.
+                return 128 + signal.SIGKILL
             if IO_URING_ERROR not in stderr or attempt == MAX_ATTEMPTS:
                 unblock_serial_accept(arguments)
                 return returncode
-            os.unlink(overlay)
+            if not state_dir:
+                os.unlink(overlay)
             print(f"retrying QEMU after io_uring failure ({attempt}/{MAX_ATTEMPTS})", file=sys.stderr)
             time.sleep(attempt)
     return 1

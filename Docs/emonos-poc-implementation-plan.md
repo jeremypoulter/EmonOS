@@ -967,9 +967,68 @@ The optional Pi bundle staging test checks the downloaded public file's hash
 and signature without installing it. `EMONOS_WP7_RESTORE_A=1` explicitly
 returns to factory A after the healthy test's two B boots so the broken-B
 test can follow on the same card; no reflash or factory-data reset is used.
-**Pending:** Power1 bench verification and interrupted-install T7 on both
-targets. The live Pi is left healthy and committed on A/0.1.0; broken B is
-ineligible for boot. No Power1 relay operation has occurred during WP7.
+**X86 T7 evidence (2026-10-03):** the gated interrupted-install test passed
+**1/1**. It uses a fresh sparse raw copy of the factory disk retained under
+`output/test-state/`, with the same disk and GRUB bootstate across restart,
+unchanged read-only OVMF firmware and no `-snapshot`. After observing RAUC's
+rootfs.1 write phase, it also reads the raw backing region to require bytes
+different from both complete v1 and v2, then sends SIGKILL through a pidfd
+after verifying that the PID is this driver's QEMU descendant. The restarted
+guest selected A/0.1.0, committed as healthy and retained the feed, machine
+ID, SSH host key and full A partition hashes. The stable post-cut B hash was
+neither the old nor the completed v2 image, independently proving partial
+payload state. Evidence and the retained test disk are in
+`output/test-state/t7-01keoy8b/cut-evidence.json` and `disk.raw`.
+
+The normal VM launcher remains qcow2/disposable. T7 intentionally uses raw:
+qcow2 mapping-cache commits made live backing inspection unreliable and
+could hide guest writes lost with QEMU memory. RAUC's userspace copy percentage
+also ran ahead of backing writes, so a log-only cut with unchanged B was
+rejected, not counted as T7. Other harness iterations exposed signal exit-code
+normalization and a temporary raw-inspection copy quota; those were fixed
+without restoring disk snapshots or weakening payload checks. Large test
+state now lives on the project disk, not RAM-backed `/tmp`. Only the VM's
+write rate is bounded during installation (after healthy bootstrap), not a
+host I/O policy or a health timeout change.
+
+**Pi T7 evidence (2026-10-03):** Power1's baseline off/on test completed
+with Power5 continuously ON, then the guest-side watcher cut Power1 only
+after an observed 75% `Copying image to rootfs.1` entry. The outlet remained
+off for 5 s; Tasmota reported it restored ON, with Power5 unchanged. No card
+flash, bootstate reset, firmware change or graceful shutdown occurred. The
+Pi booted its previous active slot A/0.1.0, the health monitor committed A,
+and the inactive B rootfs hash differed from both the v1 and complete v2
+payloads. The authenticated feed, machine ID, SSH host key and complete A
+kernel/system bytes survived. The normal post-recovery runtime/reboot checks
+passed 8/8; no failed systemd units, with the watchdog active at 30 s.
+Evidence is retained in `output/test-state/rpi4-t7-evidence.json`.
+
+**WP7 complete: T6/T7 passed on x86 and Pi.** The Pi's first post-power-on
+pytest attempt hit ShellDriver login/input timing and was not counted; direct
+serial inspection showed A healthy, and targeted factory/watchdog checks
+passed before the cut. Following recovery, all eight selected checks passed.
+The failed harness iteration did not cause a second power cut or additional
+relay operation. Power5 stayed on throughout. No Pi power relay is currently
+being operated.
+
+The first T7 relay watcher used 5–15% overall progress, but RAUC's global
+progress had already reached ~73% when it began copying `rootfs.1`; this
+trigger never fired and B completed. That slot was restored to the factory
+v1 payload with a signed v1 RAUC bundle, A was selected, and B's boot state
+was marked bad. The corrected watcher waits for 75–85% while `rootfs.1` is
+being copied, emits an observable serial marker, and only then asks Tasmota
+Power1 to switch off. The successful evidence above is from this corrected
+run; no test cuts are inferred from elapsed time alone.
+
+A later full Pi suite after many WP7 app-checks found the existing emoncms
+test user temporarily rate-limited (`Too many attempts`) and `rauc status`
+reported B good because the T7 repair had reinstalled the v1 B image before
+its state was marked bad. These are test-fixture/state assertions, not data
+loss. Feed-preservation and eight post-recovery checks had already passed;
+the test account is currently rate-limited by this test history. Avoid
+repeated registration/authentication probes and either wait for the lockout
+window or use the established test account with its authenticated API key
+for future read-only T8 application checks. Do not reset the persistent DB.
 
 1. `emonos-health.service` → `/usr/libexec/emonos/health-check`: start independently of a
    successful Compose start and poll for no more than five monotonic minutes. Require bounded
@@ -1055,7 +1114,7 @@ builds.
 | WP4 | **DONE 2026-09-30** — A/B, squashfs, data partition; **T2, T3** on x86 and Pi | 5.5 wk |
 | WP5 | **DONE 2026-10-01** — RAUC, signed bundles; **T4** on x86 and Pi | 7 wk |
 | WP6 | **DONE 2026-10-01** — signed A→B round trip and data survival; **T5** on x86 and Pi | 8 wk |
-| WP7 | **T6 DONE 2026-10-03** on x86/Pi; health commit/watchdog pass; **T7 pending** | 9.5 wk |
+| WP7 | **DONE 2026-10-03** — health commit, autonomous rollback and interrupted-install recovery; **T6/T7** on x86 and Pi | 9.5 wk |
 | WP8 | Harness — **T8** | 10 wk |
 | WP9 | Real hardware — the `rpi4` half of T1 and T4–T7 | runs alongside WP2–WP8, no longer additive |
 

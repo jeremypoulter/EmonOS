@@ -10,7 +10,9 @@ emoncms stack, data-partition growth, machine ID and SSH host keys survive
 reboot on both targets (WP4, T2/T3). RAUC signed-bundle verification and
 slot reporting pass on both targets (WP5, T4). Signed A→B installs with data
 survival pass on both targets (WP6, T5). Health-based commit and autonomous
-broken-update rollback pass on both (WP7, T6); interrupted-install T7 remains.
+broken-update rollback and interrupted-install recovery pass on both (WP7,
+T6/T7). Pi Power1 was verified and used for a five-second mid-install cut;
+Power5 was left ON and untouched.
 See `Docs/emonos-poc-implementation-plan.md` for the PoC scope.
 
 ## Build the x86 VM image
@@ -109,7 +111,7 @@ enable the health service, which can commit B autonomously. The normal factory
 `test_ab_layout` and `test_rauc_status` expect A and are not post-update
 checks while B is running.
 
-## WP7 health and rollback (T6 validated on both targets)
+## WP7 health, rollback and interruption recovery (T6/T7 validated on both)
 
 New builds enable an autonomous five-minute health monitor. It checks local
 HTTP, authenticates the existing PoC `emonospoc` account, validates the feed
@@ -141,10 +143,38 @@ to return explicitly to factory A after proving two committed B boots, so
 the broken-B rollback test can follow without reflashing the card.
 Both the local x86 VM and physical Pi passed factory commit/watchdog checks, healthy B
 commitment through a second reboot, and broken B's autonomous five-minute
-rollback to A with data intact. Interrupted-install T7 remains pending on
-both targets. An earlier Pi fallback boot exceeded the health deadline once
+rollback to A with data intact. Interrupted-install T7 also passes on both:
+QEMU SIGKILL for x86 and a controlled Power1 cut at observed rootfs-B write
+progress for Pi. The Pi recovered on A with persistent data intact; Power5
+was not operated. An earlier Pi fallback boot exceeded the health deadline once
 before recovering on its next boot; that startup-variance issue remains
 unexplained and is recorded in the implementation plan.
+
+## Interrupted-install VM test (T7)
+
+This opt-in test **kills its own QEMU process during a real inactive-slot
+write**, then restarts the same test disk. It creates and retains a fresh
+sparse **raw** clone under ignored `output/test-state/`; the normal launcher
+continues to use disposable qcow2 overlays. It disables snapshot mode and
+does not restore the disk, bootstate or firmware from a saved snapshot.
+
+```sh
+EMONOS_RUN_POWER_CUT_TEST=1 EMONOS_QEMU_DISABLE_IO_URING=1 \
+EMONOS_QEMU_BASE_DISK="$PWD/output/wp7/x86-v1-health.img" \
+EMONOS_QEMU_RAUC_BUNDLE="$PWD/output/wp7/x86-v2-healthy.raucb" \
+tests/run.sh x86-64-vm -q -s -k interrupted_install_keeps_active_slot
+```
+
+The cut follows observed RAUC rootfs-write progress **and** an incomplete
+changed region visible in the raw disk backing, not an arbitrary delay or
+userspace percentage alone. A full inactive-slot hash after recovery must
+differ from both complete images; the old slot, feed and identity must survive.
+`cut-evidence.json` is retained alongside the test disk. Allow several GiB
+of project-disk space per retained run; prefer disk-backed `TMPDIR` when a
+host's temporary filesystem is RAM-backed and already pressured. This T7
+adapter operates only on its own QEMU. Physical Pi T7 uses the serial harness
+and guest-side progress watcher to cut only Tasmota Power1; do not run it
+unless Power1 is verified to feed only the test Pi.
 
 ## Run the x86 VM
 
