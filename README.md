@@ -15,6 +15,8 @@ T6/T7). Pi Power1 was verified and used for a five-second mid-install cut;
 Power5 was left ON and untouched.
 The shared T8 suite and requirement coverage are complete on x86 and Pi.
 See `Docs/emonos-poc-implementation-plan.md` for the PoC scope.
+For build, flash, first-boot, update and test procedures, see the
+[`EmonOS user guide`](Docs/emonos-user-guide.md).
 
 ## Build the x86 VM image
 
