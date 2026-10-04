@@ -1083,7 +1083,7 @@ database reset was necessary.
 Two targets is a weaker test of target-agnosticism than three, but it is still the test:
 different architecture, different bootloader, different partition table, one test body.
 
-### WP9 — Real hardware (~1 week, on the critical path from WP2 onward)
+### WP9 — Real hardware → **DONE 2026-10-04**
 
 `tests/targets/rpi4.yaml` swaps `QEMUDriver` for a serial console plus switchable power
 (a network-controlled PDU or a relay) for the power-cut test. This is the payoff for choosing
@@ -1093,7 +1093,13 @@ labgrid (learnings §6.4).
 Pi path in emulation, WP9 was a few days of confirmation that overlapped everything else.
 It is now the *only* place the aarch64 build, the U-Boot A/B path, the hybrid MBR table and
 the Pi's power-cut behaviour are ever demonstrated — **T1 and T4–T7 on `rpi4` do not exist
-without it** (R12). Consequences:
+without it** (R12). All these target claims are now exercised on the physical Pi:
+factory image/firmware boot; RAUC slot status/signature; healthy and broken A/B
+updates; data/identity persistence; Power1 baseline recovery; and a guest-triggered
+Power1 cut during observed inactive-rootfs write progress. The successful T7
+recovered the same card/bootstate to healthy A without touching Power5.
+The bench remains a single-hardware-instance operational risk, but the PoC
+acceptance evidence is closed.
 
 - The bench must be procured and working before WP2 needs it, not before WP9 — hence
   task 0.7.
@@ -1121,9 +1127,9 @@ builds.
 | **R7** | **QEMU intermittently fails to start under host memory pressure** [verified] | flaky CI; misleading failures | WP1 (harness) | **Harness-side only, by decision (D15): no host change.** A `MemAvailable` precondition plus a retry matched to the literal `Failed to initialize io_uring`, max 3 attempts. Never blanket-retry a boot failure |
 | ~~**R8**~~ | ~~Read-only `/etc` without an overlay may break sshd/systemd/Docker~~ | — | — | **RETIRED FOR THE WP4 WORKLOAD 2026-09-30.** Both targets boot/read-only with data-backed SSH keys, persistent machine ID and Docker/app stack; re-evaluate if WP5 adds a new persistent `/etc` requirement |
 | **R9** | Compose v2 under Buildroot on aarch64 is not a path the reference exercises (it uses systemd units per container) | fall back to `docker run` units | WP2 | `docker compose version` on both targets in WP2, before WP3 depends on it. Note this is now an aarch64 claim testable **only on the bench** (R12). **2026-09-24:** Docker 28.3.3 and Compose 2.38.2 on `rpi4` ran the four-service stack with health-gated `depends_on` and `up --wait` |
-| **R10** | Host-side vs in-guest health checks diverge between targets, so T2–T7 are not actually one test suite | breaks T8; late rework | WP3 | Settle on in-guest checks over the serial console before T2 is written (D18) |
+| ~~**R10**~~ | ~~Host-side vs in-guest health checks diverge between targets, so T2–T7 are not actually one test suite~~ | — | — | **RETIRED 2026-10-04 (WP8/T8).** The shared in-guest serial tests passed on x86 and Pi; gated update, rollback and power-cut paths were individually demonstrated on both |
 | ~~**R11**~~ | ~~`rpi4-qemu` sees only ~960 MB and cannot use KVM~~ | — | — | **MOOT 2026-09-16 (D14).** A real Pi 4 has 4–8 GB and runs at native speed. The 5-minute health-check budget of PoC spec §7 is no longer under pressure from emulation |
-| **R12** | **The Pi bench is a single point of failure.** With `rpi4-qemu` dropped, one board, one serial adapter and one switchable outlet are the only route to T1 and T4–T7 on `rpi4`, and the U-Boot A/B path is never exercised anywhere else — including in CI once the harness is wired up | **T1, T4–T7 on `rpi4` cannot be demonstrated at all**; U-Boot bugs surface late, on the target that matters most | WP0.7, then WP9 | Order the bench in WP0 (0.7), not WP9. Buy two boards and two SD cards — the marginal cost is trivial against a week of blocked work. Keep the verified `raspi4b` recipe in Appendix B so the emulated target can be re-added as a CI smoke test if the bench becomes a bottleneck |
+| **R12** | **The Pi bench remains a single point of failure for future revalidation.** One board, serial adapter and Power1 outlet provide the only hardware test path; completed WP9 evidence does not make the bench redundant | blocks future Pi tests if the board, adapter or switch fails; product hardware may differ | operations | Evidence now exists for T1/T4–T7 on the tested Pi. Keep the spare SD and serial setup documented; consider a second bench before product qualification. Do not infer other-board compatibility |
 
 ---
 
@@ -1140,7 +1146,7 @@ builds.
 | WP6 | **DONE 2026-10-01** — signed A→B round trip and data survival; **T5** on x86 and Pi | 8 wk |
 | WP7 | **DONE 2026-10-03** — health commit, autonomous rollback and interrupted-install recovery; **T6/T7** on x86 and Pi | 9.5 wk |
 | WP8 | **DONE 2026-10-04** — same runner, JUnit/labgrid logs and generated requirement coverage; **T8** | 10 wk |
-| WP9 | Real hardware — the `rpi4` half of T1 and T4–T7 | runs alongside WP2–WP8, no longer additive |
+| WP9 | **DONE 2026-10-04** — physical Pi bootloader and T1/T4–T7 evidence | complete, performed alongside WP2–WP8 |
 
 **8–10 weeks for one person**, against the PoC spec's 6–9. The difference is WP0 (which the
 spec allows for) and R6 — an arm64 image nobody has built yet. WP4 onward is where the
