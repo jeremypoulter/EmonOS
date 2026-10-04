@@ -13,6 +13,7 @@ survival pass on both targets (WP6, T5). Health-based commit and autonomous
 broken-update rollback and interrupted-install recovery pass on both (WP7,
 T6/T7). Pi Power1 was verified and used for a five-second mid-install cut;
 Power5 was left ON and untouched.
+The shared T8 suite and requirement coverage are complete on x86 and Pi.
 See `Docs/emonos-poc-implementation-plan.md` for the PoC scope.
 
 ## Build the x86 VM image
@@ -150,6 +151,11 @@ was not operated. An earlier Pi fallback boot exceeded the health deadline once
 before recovering on its next boot; that startup-variance issue remains
 unexplained and is recorded in the implementation plan.
 
+WP8 is complete: the same runner passes on x86 and Pi, writes JUnit/labgrid
+logs, and generates `Docs/emonos-test-coverage.md` from test docstrings. The
+Pi run used the provisioned test account's API key from a temporary local
+server after its password-auth throttle engaged; no database was reset.
+
 ## Interrupted-install VM test (T7)
 
 This opt-in test **kills its own QEMU process during a real inactive-slot
@@ -255,6 +261,18 @@ enumerated last. Use the `/dev/serial/by-path/` entry for the USB port instead:
 ```sh
 EMONOS_PI_SERIAL=/dev/serial/by-path/<usb-port-path> tests/run.sh rpi4
 ```
+
+Each runner invocation writes JUnit XML to `output/test-results/<target>/junit.xml`
+and labgrid logs under `output/test-results/<target>/labgrid/`. Override the
+report root with `EMONOS_TEST_REPORT_DIR`. `Docs/emonos-test-coverage.md` is
+generated from pytest function docstrings; regenerate it with
+`python3 tests/requirement_coverage.py` after changing acceptance-ID tags.
+
+For an existing provisioned test account that is temporarily rate-limited,
+the app check and health probe can use a root-owned, mode-0600
+`/mnt/data/health/test-api-key` containing its 32-character write API key.
+This is a PoC test credential: do not store it in the repository, labgrid log
+directory or CI artifacts. No persistent database reset is needed.
 
 Set `EMONOS_TEST_PYTHON` when the dependencies are installed in a virtual environment using
 a non-default Python executable.

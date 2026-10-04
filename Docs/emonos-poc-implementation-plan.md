@@ -1051,6 +1051,30 @@ for future read-only T8 application checks. Do not reset the persistent DB.
 
 ### WP8 — One harness, all targets, all tests (~1 week) → **T8**
 
+**Completed 2026-10-04: T8 on both targets.** `tests/run.sh` emits per-target JUnit XML
+and labgrid logs under `output/test-results/<target>/` (override via
+`EMONOS_TEST_REPORT_DIR`); CI copies those reports into its build artifact.
+`tests/requirement_coverage.py` generates `Docs/emonos-test-coverage.md`
+from collected pytest function docstrings and CI rejects a stale table. The
+T8 contract test verifies both target configs use the same `tests/` tree.
+The full x86 shared run passed **43 passed, 8 skipped** with growth, signed
+bundle verification and gated reboot enabled; JUnit was parsed successfully
+and labgrid's console log was produced. The full Pi shared suite passed
+**43 passed, 8 skipped**; it used the existing test account's protected
+write API key because repeated WP7 attempts had triggered emoncms' login
+throttle. The key was served temporarily from the wired bench host, expanded
+inside the guest (never put in shell arguments/labgrid logs), and the temporary
+server was stopped after the run. No database reset was done. Both targets
+produced valid JUnit XML and labgrid console logs under output/test-results.
+
+The Pi suite first exposed the persisted account throttle and historical
+B metadata after update tests; B was marked bad and the optional API-key
+fixture enabled the full shared run without attempting registration. The
+immutable Pi image predates API-key-file fallback, so the key-aware test
+helper is fetched temporarily from the local server; subsequent Pi builds
+also support the protected `/mnt/data/health/test-api-key` file. No persistent
+database reset was necessary.
+
 1. `tests/run.sh <target>` selecting `tests/targets/<target>.yaml`; T2–T7 target-agnostic.
 2. JUnit output and `--lg-log`, so CI can consume it without changes (TEST-7 seed).
 3. Requirement-ID coverage table generated from test docstrings.
@@ -1115,7 +1139,7 @@ builds.
 | WP5 | **DONE 2026-10-01** — RAUC, signed bundles; **T4** on x86 and Pi | 7 wk |
 | WP6 | **DONE 2026-10-01** — signed A→B round trip and data survival; **T5** on x86 and Pi | 8 wk |
 | WP7 | **DONE 2026-10-03** — health commit, autonomous rollback and interrupted-install recovery; **T6/T7** on x86 and Pi | 9.5 wk |
-| WP8 | Harness — **T8** | 10 wk |
+| WP8 | **DONE 2026-10-04** — same runner, JUnit/labgrid logs and generated requirement coverage; **T8** | 10 wk |
 | WP9 | Real hardware — the `rpi4` half of T1 and T4–T7 | runs alongside WP2–WP8, no longer additive |
 
 **8–10 weeks for one person**, against the PoC spec's 6–9. The difference is WP0 (which the

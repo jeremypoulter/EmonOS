@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from test_rauc import active_slot_hashes, target_file_hash, target_rauc_json
+from common import app_check_command
 
 
 def read_record(command, path: str) -> dict:
@@ -46,8 +47,7 @@ def reboot_into(command, target, slot: str, *, autonomous: bool = False) -> None
 def prepare_update(command, target_name: str, host_path: str, version: str) -> dict:
     assert command.run_check("cat /usr/lib/emonos/version") == ["0.1.0"]
     assert wait_for_commit(command)["slot"] == "A"
-    user = os.environ.get("EMONOS_APP_TEST_USER", "")
-    command.run_check(f"EMONOS_APP_TEST_USER={shlex.quote(user)} /usr/libexec/emonos-app-check", timeout=120)
+    command.run_check(app_check_command(), timeout=120)
     feed = command.run_check("find /mnt/data/emoncms/phpfina -name '*.dat' | head -1")[0]
     original = {
         "feed": feed, "feed_hash": target_file_hash(command, feed),
@@ -120,7 +120,7 @@ def test_stage_pi_health_bundle(command, target_name: str) -> None:
 
 @pytest.mark.timeout(1500)
 def test_healthy_update_commits_and_reboots(command, target, target_name: str) -> None:
-    """HC-1: healthy B marks itself good and survives a second boot."""
+    """T5, HC-1: healthy B marks itself good and survives a second boot."""
     if os.environ.get("EMONOS_RUN_COMMIT_TEST") != "1":
         pytest.skip("set EMONOS_RUN_COMMIT_TEST=1 for a healthy update and two reboots")
     original = prepare_update(command, target_name, os.environ["EMONOS_WP7_BUNDLE_HOST"], "0.2.0")
@@ -133,6 +133,7 @@ def test_healthy_update_commits_and_reboots(command, target, target_name: str) -
     assert wait_for_commit(command)["slot"] == "B"
     assert command.run_check("cat /usr/lib/emonos/version") == ["0.2.0"]
     assert_preserved(command, original)
+    command.run_check(app_check_command(), timeout=120)
     # Physical tests share one card. Explicitly return to healthy factory A
     # when requested so the broken-B test can follow without a reflash.
     if os.environ.get("EMONOS_WP7_RESTORE_A") == "1":
@@ -145,7 +146,7 @@ def test_healthy_update_commits_and_reboots(command, target, target_name: str) -
 
 @pytest.mark.timeout(1500)
 def test_broken_update_rolls_back_autonomously(command, target, target_name: str) -> None:
-    """T6, HC-3: bootable broken app times out and returns to healthy A itself."""
+    """T6, HC-4, OS-8, HC-9: broken B times out and autonomously returns to A."""
     if os.environ.get("EMONOS_RUN_ROLLBACK_TEST") != "1":
         pytest.skip("set EMONOS_RUN_ROLLBACK_TEST=1 to install the broken app bundle")
     original = prepare_update(command, target_name, os.environ["EMONOS_WP7_BUNDLE_HOST"], "0.2.0-broken")

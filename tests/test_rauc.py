@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from common import app_check_command
 
 
 def target_rauc_json(command, arguments: str) -> dict:
@@ -49,7 +50,7 @@ def target_file_hash(command, path: str) -> str:
 
 
 def test_rauc_bundle_payloads(target_name: str, repo_root: Path, tmp_path: Path) -> None:
-    """T4: signed bundle has exactly the factory kernel/system payloads."""
+    """T4, OS-1: signed bundle has exactly the factory kernel/system payloads."""
     output = repo_root / "output" / target_name
     images = output / "images"
     bundle = images / f"emonos-{target_name}.raucb"
@@ -81,7 +82,7 @@ def test_rauc_bundle_payloads(target_name: str, repo_root: Path, tmp_path: Path)
 
 
 def test_rauc_rejects_untrusted_signer(target_name: str, repo_root: Path, tmp_path: Path) -> None:
-    """T4: a bundle must not verify against an unrelated development keyring."""
+    """T4, OS-1: a bundle must reject an unrelated development keyring."""
     subprocess.run([str(repo_root / "buildroot-external/ota/dev-keys.sh"), str(tmp_path)],
                    check=True, capture_output=True)
     output = repo_root / "output" / target_name
@@ -95,7 +96,7 @@ def test_rauc_rejects_untrusted_signer(target_name: str, repo_root: Path, tmp_pa
 
 @pytest.mark.timeout(180)
 def test_rauc_status(command, target_name: str) -> None:
-    """T4: RAUC reads the native bootloader state and both grouped raw slots."""
+    """T4, OS-1, OS-2: RAUC reads both grouped slots and bootloader state."""
     command.run_check("systemctl is-active --quiet rauc.service")
     result = target_rauc_json(command, "status --detailed --output-format=json")
     assert result["compatible"] == f"emonos-{target_name}"
@@ -117,13 +118,20 @@ def test_rauc_status(command, target_name: str) -> None:
         assert rootfs["parent"] == f"kernel.{index}"
         assert kernel["state"] == ("booted" if index == 0 else "inactive")
         for slot in (kernel, rootfs):
-            assert slot["slot_status"]["bundle"]["version"] == version
+            compatible = slot["slot_status"]["bundle"]["compatible"]
+            assert compatible == f"emonos-{target_name}"
+            # Central status is historical metadata, not a digest of the raw
+            # partition. After an interrupted write, B may still report the
+            # last successfully installed version (or none); only booted A
+            # must match the running immutable root's version.
+            if index == 0:
+                assert slot["slot_status"]["bundle"]["version"] == version
     command.run_check("test -w /mnt/data/rauc")
 
 
 @pytest.mark.timeout(300)
 def test_rauc_bundle_on_target(command, target_name: str, repo_root: Path) -> None:
-    """T4: target verifies with its baked keyring, without --no-verify or installs."""
+    """T4, OS-1: the target verifies a signed bundle with its baked keyring."""
     path = os.environ.get("EMONOS_RAUC_BUNDLE_PATH")
     if url := os.environ.get("EMONOS_RAUC_BUNDLE_URL"):
         path = "/mnt/data/wp5-test.raucb"
@@ -171,7 +179,7 @@ def test_stage_pi_update_bundle(command, target_name: str) -> None:
 
 @pytest.mark.timeout(1200)
 def test_update_round_trip(command, target, target_name: str) -> None:
-    """T5: install signed v2 into inactive B; reboot and keep the data feed."""
+    """T5, OS-11, OS-13, OS-15: install B, boot v2 and retain the feed."""
     if os.environ.get("EMONOS_RUN_UPDATE_TEST") != "1":
         pytest.skip("set EMONOS_RUN_UPDATE_TEST=1 to install into inactive B and reboot")
 
@@ -196,11 +204,7 @@ def test_update_round_trip(command, target, target_name: str) -> None:
         "systemctl is-active --quiet emonos-health.service",
         tries=80, timeout=315.0, sleepduration=4,
     )
-    test_user = os.environ.get("EMONOS_APP_TEST_USER", "")
-    command.run_check(
-        f"EMONOS_APP_TEST_USER={shlex.quote(test_user)} /usr/libexec/emonos-app-check",
-        timeout=120,
-    )
+    command.run_check(app_check_command(), timeout=120)
     feed = command.run_check("find /mnt/data/emoncms/phpfina -name '*.dat' | head -1")[0]
     assert feed.startswith("/mnt/data/emoncms/phpfina/")
     feed_hash = target_file_hash(command, feed)
@@ -254,10 +258,7 @@ def test_update_round_trip(command, target, target_name: str) -> None:
     # app-check posts new samples to the existing input and can append to its
     # previous feed. Compare the original bytes *before* that write workload.
     assert target_file_hash(command, feed) == feed_hash
-    command.run_check(
-        f"EMONOS_APP_TEST_USER={shlex.quote(test_user)} /usr/libexec/emonos-app-check",
-        timeout=120,
-    )
+    command.run_check(app_check_command(), timeout=120)
     assert command.run_check("cat /etc/machine-id") == [machine_id]
     assert target_file_hash(command, "/mnt/data/ssh/ssh_host_ed25519_key.pub") == host_key
     command.run_check("test -z \"$(systemctl --failed --no-pager --no-legend --plain)\"")

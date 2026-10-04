@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from common import app_check_command
+
 
 REQUIRED_CGROUP_CONTROLLERS = {"cpu", "cpuset", "io", "memory", "pids"}
 
@@ -36,7 +38,7 @@ PRELOAD_IMAGES = {
 
 
 def test_target_image_is_present(target_name: str, repo_root: Path) -> None:
-    """HW-3: the selected target build produces its documented disk image."""
+    """T1, HW-3: the selected target build produces its documented disk image."""
     images = {
         "x86-64-vm": "output/x86-64-vm/images/emonos-x86-64-vm.img",
         "rpi4": "output/rpi4/images/emonos-rpi4.img",
@@ -79,7 +81,7 @@ def test_pi_bootstate_environment_offset(target_name: str, repo_root: Path) -> N
 
 
 def test_targets_use_common_runtime(repo_root: Path) -> None:
-    """HW-3: both targets select the common EmonOS runtime and kernel policy."""
+    """T1, HW-3: both targets select the common EmonOS runtime and kernel policy."""
     for target in ("emonos_x86_64_vm", "emonos_rpi4"):
         content = (repo_root / f"buildroot-external/configs/{target}_defconfig").read_text()
         assert "BR2_EMONOS_RUNTIME=y" in content
@@ -88,7 +90,7 @@ def test_targets_use_common_runtime(repo_root: Path) -> None:
 
 @pytest.mark.timeout(360)
 def test_boot_runtime(command, expected_architecture: str) -> None:
-    """HW-3, TEST-7: exercise the common runtime through the target serial shell."""
+    """T2, ARCH-4: boot architecture and common runtime over target serial."""
     assert command.run_check("uname -s") == ["Linux"]
     assert command.run_check("uname -m") == [expected_architecture]
     assert command.run_check("hostname") == ["emonos"]
@@ -116,7 +118,7 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
 
 @pytest.mark.timeout(1200)
 def test_app_stack(command) -> None:
-    """WP3: first boot loads the archive and starts the offline application stack."""
+    """T2, HC-1: first boot loads images and serves the emoncms application."""
     if not command.poll_until_success(
         "systemctl is-active --quiet emonos-app.service", tries=225, timeout=900.0, sleepduration=4
     ):
@@ -141,15 +143,12 @@ def test_app_stack(command) -> None:
     )
 
     # This script runs in the guest, avoiding host-side HTTP/DNS assumptions.
-    test_user = os.environ.get("EMONOS_APP_TEST_USER", "")
-    command.run_check(
-        f"EMONOS_APP_TEST_USER={test_user} /usr/libexec/emonos-app-check", timeout=120
-    )
+    command.run_check(app_check_command(), timeout=120)
 
 
 @pytest.mark.timeout(600)
 def test_ab_layout(command) -> None:
-    """WP4: both targets boot slot A with read-only system and persistent data."""
+    """T2, ARCH-4: both targets boot A with read-only root and persistent data."""
     command.run_check("grep -q 'rauc.slot=A' /proc/cmdline")
     command.run_check("grep -q ' / squashfs ro,' /proc/mounts")
     command.run_check("grep -q ' /var tmpfs ' /proc/mounts")
@@ -208,7 +207,7 @@ def test_data_partition_growth(command, target_name: str) -> None:
 
 @pytest.mark.timeout(900)
 def test_feed_survives_reboot(command, target) -> None:
-    """T3: a PHPFina feed stays on the data partition across a slot-A reboot."""
+    """T3, DATA-2: a PHPFina feed survives a slot-A reboot."""
     if os.environ.get("EMONOS_RUN_REBOOT_TEST") != "1":
         pytest.skip("set EMONOS_RUN_REBOOT_TEST=1 to exercise a guest reboot")
 
@@ -216,10 +215,7 @@ def test_feed_survives_reboot(command, target) -> None:
         "systemctl is-active --quiet emonos-app.service",
         tries=150, timeout=600.0, sleepduration=4,
     )
-    test_user = os.environ.get("EMONOS_APP_TEST_USER", "")
-    command.run_check(
-        f"EMONOS_APP_TEST_USER={test_user} /usr/libexec/emonos-app-check", timeout=120
-    )
+    command.run_check(app_check_command(), timeout=120)
     feed = command.run_check("find /mnt/data/emoncms/phpfina -name '*.dat' | head -1")[0]
     assert feed
     original = command.run_check(f"sha256sum {feed}")[0]
@@ -243,6 +239,18 @@ def test_feed_survives_reboot(command, target) -> None:
     command.run_check(f"grep -q 'systemd.machine_id={machine_id}' /proc/cmdline")
     command.run_check("test -z \"$(systemctl --failed --no-pager --no-legend --plain)\"")
     command.run_check("test -f /mnt/data/.preload.done")
+    # Compare durable feed bytes before the mutating app-check posts samples.
+    command.run_check(app_check_command(), timeout=120)
+
+
+def test_harness_contract(repo_root: Path) -> None:
+    """T8, TEST-7: one runner selects either target but the same tests directory."""
+    runner = (repo_root / "tests/run.sh").read_text()
+    assert '"$test_dir"' in runner
+    for target in ("x86-64-vm", "rpi4"):
+        assert (repo_root / f"tests/targets/{target}.yaml").is_file()
+        assert target in runner
+    assert "--junitxml=" in runner and "--lg-log=" in runner
 
 
 @pytest.mark.timeout(1200)

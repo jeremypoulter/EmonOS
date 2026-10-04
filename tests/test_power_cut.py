@@ -15,6 +15,7 @@ from power_cut import (complete_guest_triggered_power_cut, cut_qemu_power,
                        power1_state, restore_qemu_power)
 from test_rauc import active_slot_hashes, target_file_hash, target_rauc_json
 from test_rollback import assert_preserved, wait_for_commit
+from common import app_check_command
 
 
 def partition_hash(image: Path, index: int) -> str:
@@ -67,7 +68,7 @@ def read_backing_region(state: Path, offset: int, length: int) -> bytes:
 
 @pytest.mark.timeout(1200)
 def test_interrupted_install_keeps_active_slot(command, target, target_name: str, repo_root: Path) -> None:
-    """T7: SIGKILL during observed rootfs.1 progress, no snapshot restoration."""
+    """T7, OS-14: cut power during an observed inactive-slot write and recover."""
     if os.environ.get("EMONOS_RUN_POWER_CUT_TEST") != "1":
         pytest.skip("set EMONOS_RUN_POWER_CUT_TEST=1 for an interrupted install")
     if target_name == "rpi4":
@@ -77,8 +78,7 @@ def test_interrupted_install_keeps_active_slot(command, target, target_name: str
     bundle = Path(os.environ["EMONOS_QEMU_RAUC_BUNDLE"])
     assert wait_for_commit(command)["slot"] == "A"
     assert command.run_check("cat /usr/lib/emonos/version") == ["0.1.0"]
-    user = os.environ.get("EMONOS_APP_TEST_USER", "")
-    command.run_check(f"EMONOS_APP_TEST_USER={shlex.quote(user)} /usr/libexec/emonos-app-check", timeout=120)
+    command.run_check(app_check_command(), timeout=120)
     feed = command.run_check("find /mnt/data/emoncms/phpfina -name '*.dat' | head -1")[0]
     original = {"feed": feed, "feed_hash": target_file_hash(command, feed),
                 "id": command.run_check("cat /etc/machine-id")[0],
@@ -171,8 +171,7 @@ def run_interrupted_pi_install(command, target, target_name: str) -> None:
     state_file = "/mnt/data/wp7-install.log"
     assert wait_for_commit(command)["slot"] == "A"
     assert command.run_check("cat /usr/lib/emonos/version") == ["0.1.0"]
-    user = os.environ.get("EMONOS_APP_TEST_USER", "")
-    command.run_check(f"EMONOS_APP_TEST_USER={shlex.quote(user)} /usr/libexec/emonos-app-check", timeout=120)
+    command.run_check(app_check_command(), timeout=120)
     feed = command.run_check("find /mnt/data/emoncms/phpfina -name '*.dat' | head -1")[0]
     original = {"feed": feed, "feed_hash": target_file_hash(command, feed),
                 "id": command.run_check("cat /etc/machine-id")[0],

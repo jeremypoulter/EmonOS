@@ -48,6 +48,9 @@ jobs:
       - name: Compile Python test harness
         run: python3 -m py_compile tests/*.py buildroot-external/app/*.py
 
+      - name: Validate generated requirement coverage
+        run: python3 tests/requirement_coverage.py --check
+
       - name: Reject developer-specific build paths
         run: |
           pattern='open''code|CLAUDE''_JOB_DIR'
@@ -171,6 +174,10 @@ jobs:
           fi
           if test -f image-reproducibility.txt; then
             cp image-reproducibility.txt ci-artifacts/image-reproducibility.txt
+          fi
+          if test -d 'output/test-results/${{ matrix.target }}'; then
+            mkdir -p ci-artifacts/test-results
+            cp -a 'output/test-results/${{ matrix.target }}/.' ci-artifacts/test-results/
           fi
           bundle='output/${{ matrix.target }}/images/emonos-${{ matrix.target }}.raucb'
           if test -f "$bundle"; then

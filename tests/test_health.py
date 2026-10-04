@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from test_rollback import reboot_into
+from common import app_check_command
 
 
 OVERLAY = Path(__file__).parents[1] / "buildroot-external/app/rootfs-overlay"
@@ -44,6 +45,15 @@ def test_reboot_login_is_owned_by_shell_driver(autonomous):
     assert events[-2:] == [("send", ""), ("activate",)]
     assert (("send", "systemctl reboot") in events) == (not autonomous)
     assert ("expect", "Booting Slot A") in events
+
+
+def test_api_key_fallback_does_not_embed_credential_in_command(monkeypatch):
+    key = "0123456789abcdef0123456789abcdef"
+    monkeypatch.setenv("EMONOS_APP_TEST_API_URL", "http://172.16.1.46:8767")
+    monkeypatch.setenv("EMONOS_APP_TEST_APIKEY", key)
+    command = app_check_command()
+    assert "/app-check-with-key.sh" in command and "/write-key" in command
+    assert "$(curl -fsS" in command and key not in command
 
 
 def executable(path: Path, text: str) -> None:

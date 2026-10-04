@@ -38,4 +38,9 @@ case "$target" in
         ;;
 esac
 
-exec "$python" -m pytest --lg-env "$test_dir/targets/$target.yaml" "$test_dir" "$@"
+report_dir=${EMONOS_TEST_REPORT_DIR:-$repo_dir/output/test-results/$target}
+mkdir -p "$report_dir/labgrid"
+
+exec "$python" -m pytest --lg-env "$test_dir/targets/$target.yaml" \
+    --junitxml="$report_dir/junit.xml" --lg-log="$report_dir/labgrid" \
+    "$test_dir" "$@"

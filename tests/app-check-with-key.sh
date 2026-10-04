@@ -1,27 +1,11 @@
 #!/bin/sh
-# WP3 authenticated application data-path check. Run inside the guest.
+# WP8 fallback for a locally rate-limited PoC account. Served only from the
+# test host on the bench LAN; API key arrives via environment, never argv/logs.
 set -eu
-
 base=http://127.0.0.1
 user=${EMONOS_APP_TEST_USER:-emonospoc}
-password=poc-password-123
-key=${EMONOS_APP_TEST_APIKEY:-}
-if [ -z "$key" ] && [ -r /mnt/data/health/test-api-key ]; then
-    key=$(cat /mnt/data/health/test-api-key)
-fi
-if [ -z "$key" ]; then
-    echo "app-check: authenticate"
-    auth=$(curl -fsS --max-time 15 -X POST -d "username=$user&password=$password" "$base/user/auth.json")
-    if ! printf '%s' "$auth" | grep -q '"success":true'; then
-        echo "app-check: register"
-        auth=$(curl -fsS --max-time 15 -X POST \
-            -d "username=$user&password=$password&email=$user@example.invalid" \
-            "$base/user/register.json")
-    fi
-    key=$(printf '%s' "$auth" | sed -n 's/.*"apikey_write":"\([^"]*\)".*/\1/p')
-fi
+key=${EMONOS_APP_TEST_APIKEY:?missing test API key}
 printf '%s' "$key" | grep -Eq '^[0-9a-fA-F]{32}$'
-
 echo "app-check: input"
 curl -fsS --max-time 15 -G "$base/input/post" \
     --data-urlencode "node=$user" --data-urlencode 'fulljson={"power":100}' \
@@ -29,7 +13,6 @@ curl -fsS --max-time 15 -G "$base/input/post" \
 input=$(curl -fsS --max-time 15 "$base/input/list.json?apikey=$key" | \
     sed -n 's/.*"id":"\{0,1\}\([0-9][0-9]*\)"\{0,1\}.*"nodeid":"'"$user"'".*/\1/p' | head -1)
 test -n "$input"
-
 echo "app-check: create feed"
 feed=$(curl -fsS --max-time 15 -G "$base/feed/create.json" \
     --data-urlencode 'tag=poc' --data-urlencode "name=$user-$(date +%s)" \
@@ -37,7 +20,6 @@ feed=$(curl -fsS --max-time 15 -G "$base/feed/create.json" \
     --data-urlencode "apikey=$key")
 feed_id=$(printf '%s' "$feed" | sed -n 's/.*"feedid":\([0-9][0-9]*\).*/\1/p')
 test -n "$feed_id"
-
 echo "app-check: process and write"
 curl -fsS --max-time 15 -X POST \
     --data-urlencode "processlist=[{\"fn\":\"process__log_to_feed\",\"args\":[$feed_id]}]" \
@@ -45,8 +27,6 @@ curl -fsS --max-time 15 -X POST \
 curl -fsS --max-time 15 -G "$base/input/post" \
     --data-urlencode "node=$user" --data-urlencode 'fulljson={"power":250}' \
     --data-urlencode "apikey=$key" | grep -q '"success"'
-
-echo "app-check: read feed"
 for _ in 1 2 3 4 5 6; do
     value=$(curl -fsS --max-time 15 "$base/feed/timevalue.json?id=$feed_id&apikey=$key" | \
         sed -n 's/.*"value":\([^,}]*\).*/\1/p')
