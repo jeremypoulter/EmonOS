@@ -17,6 +17,8 @@ The shared T8 suite and requirement coverage are complete on x86 and Pi.
 See `Docs/emonos-poc-implementation-plan.md` for the PoC scope.
 For build, flash, first-boot, update and test procedures, see the
 [`EmonOS user guide`](Docs/emonos-user-guide.md).
+For a short live presentation sequence, see the
+[`demo runbook`](Docs/emonos-demo-guide.md).
 
 ## Build the x86 VM image
 
