@@ -81,12 +81,20 @@ EMONOS_FLASH_DEVICE=/dev/sdX ./flash.sh flash
 
 `flash.sh` uses the Tasmota UI status/toggle endpoint because `/cm` returns
 an empty response from the current switch firmware. Its power setter checks
-state first, so `./flash.sh on` and `./flash.sh off` are safe to repeat. The
-flash path restores mux/power on failure and waits up to 60 seconds for the
-SD card; override the wait with `EMONOS_SD_WAIT_SECONDS`. You can also use
+state first, so `./flash.sh on` and `./flash.sh off` are safe to repeat. Before
+writing, the flash path rechecks mux mode, reader identity and capacity while
+keeping the stable by-id path. On failure it attempts to return the mux to
+DUT; it powers the Pi on only after confirming DUT mode. If mux recovery fails,
+the Pi is left off for manual recovery. The script waits up to 60 seconds for
+SD media; override the wait with `EMONOS_SD_WAIT_SECONDS`. You can also use
 Raspberry Pi Imager or `dd` manually, but then you must perform the SD-mux
 and power sequence yourself. `usbsdmux` and `imager` are discovered on
 `PATH` first; set `EMONOS_SDMUX` or `EMONOS_IMAGER` if installed elsewhere.
+Use `./flash.sh mux-status` to read the mux mode; the script resolves its
+`/dev/sg*` control node by reader model because SCSI-generic numbering changes
+between connections. Override with `EMONOS_SDMUX_DEVICE` if more than one
+reader with the same model is attached; `EMONOS_SDMUX_SCSI_MODEL` changes the
+model match.
 Re-run `lsblk` after writing and confirm the intended card layout.
 
 The image initializes both A/B payloads, with A bootable and B initially

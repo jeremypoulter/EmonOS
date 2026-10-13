@@ -8,7 +8,8 @@ FLASH_DEVICE=${EMONOS_FLASH_DEVICE:-/dev/disk/by-id/usb-LinuxAut_sdFST_HS-SD_MMC
 FLASH_MODEL=${EMONOS_FLASH_MODEL:-sdFST_HS-SD_MMC}
 FLASH_SERIAL=${EMONOS_FLASH_SERIAL:-00048.01903}
 SD_WAIT_SECONDS=${EMONOS_SD_WAIT_SECONDS:-60}
-SDMUX_DEVICE=${EMONOS_SDMUX_DEVICE:-/dev/sg0}
+SDMUX_DEVICE=${EMONOS_SDMUX_DEVICE:-}
+SDMUX_SCSI_MODEL=${EMONOS_SDMUX_SCSI_MODEL:-sdFST HS-SD/MMC}
 SDMUX=${EMONOS_SDMUX:-$(command -v usbsdmux || printf '%s' "$HOME/Dev/usbsdmux/venv/bin/usbsdmux")}
 IMAGE=${EMONOS_IMAGE:-output/rpi4/images/emonos-rpi4.img}
 IMAGER=${EMONOS_IMAGER:-$(command -v imager || printf '%s' "$HOME/.local/bin/imager")}
@@ -22,6 +23,7 @@ if [ "$SD_WAIT_SECONDS" -lt 1 ]; then
     exit 2
 fi
 
+# Read and normalize the single-channel state from Tasmota's UI status fragment.
 power_state() {
     local fragment state
     fragment=$(curl -fsS --max-time 5 "${TASMOTA_URL%/}/?m=1")
@@ -33,6 +35,7 @@ power_state() {
     esac
 }
 
+# Set a requested state idempotently; the available Tasmota UI action is a toggle.
 set_power_state() {
     local desired=$1 current attempt
     case "$desired" in ON|OFF) ;; *) echo 'Expected ON or OFF' >&2; return 2 ;; esac
@@ -57,16 +60,88 @@ set_power_state() {
     return 1
 }
 
+# Return the SD mux to DUT and confirm that the hardware reports the new mode.
+switch_mux_to_dut() {
+    local state
+    sudo "$SDMUX" "$SDMUX_DEVICE" dut || return 1
+    state=$(sudo "$SDMUX" "$SDMUX_DEVICE" get) || return 1
+    if [ "$state" != dut ]; then
+        echo "SD mux reports '$state', not DUT." >&2
+        return 1
+    fi
+}
+
+# Best-effort failure recovery; never energize the Pi unless DUT mode is confirmed.
 restore_after_failure() {
     local result=$?
     if [ "$power_was_off" -eq 1 ]; then
-        echo 'Flash failed; restoring Pi power after returning SD mux to DUT.' >&2
-        sudo "$SDMUX" "$SDMUX_DEVICE" dut || true
-        set_power_state ON || true
+        echo 'Flash failed; attempting to return the SD mux to DUT.' >&2
+        if switch_mux_to_dut; then
+            if ! set_power_state ON; then
+                echo 'Could not confirm Pi power restored; inspect the switch.' >&2
+            fi
+        else
+            echo 'SD mux did not return to DUT; leaving Pi power off for manual recovery.' >&2
+        fi
     fi
     exit "$result"
 }
 
+# Resolve the SCSI-generic control node by model; sg numbering is enumeration-dependent.
+resolve_sdmux_device() {
+    local model_file model candidate matches=0
+    if [ -n "$SDMUX_DEVICE" ]; then
+        return 0
+    fi
+    for model_file in /sys/class/scsi_generic/sg*/device/model; do
+        [ -r "$model_file" ] || continue
+        model=$(sed 's/[[:space:]]*$//' "$model_file")
+        if [ "$model" = "$SDMUX_SCSI_MODEL" ]; then
+            candidate="/dev/$(basename "$(dirname "$(dirname "$model_file")")")"
+            SDMUX_DEVICE=$candidate
+            matches=$((matches + 1))
+        fi
+    done
+    case "$matches" in
+        1) echo "Using SD mux control node $SDMUX_DEVICE ($SDMUX_SCSI_MODEL)." ;;
+        0)
+            echo "No SCSI-generic device matched '$SDMUX_SCSI_MODEL'; set EMONOS_SDMUX_DEVICE." >&2
+            return 1
+            ;;
+        *)
+            echo "Multiple SCSI devices matched '$SDMUX_SCSI_MODEL'; set EMONOS_SDMUX_DEVICE." >&2
+            return 1
+            ;;
+    esac
+}
+
+# Revalidate the by-id target immediately before a destructive write.
+verify_flash_device() {
+    local mux_state properties model serial device_type device_bytes
+    mux_state=$(sudo "$SDMUX" "$SDMUX_DEVICE" get) || return 1
+    if [ "$mux_state" != host ]; then
+        echo "SD mux changed to '$mux_state'; expected host before writing." >&2
+        return 1
+    fi
+    [ -b "$FLASH_DEVICE" ] || { echo "SD card is not present at $FLASH_DEVICE." >&2; return 1; }
+    sudo udevadm settle --timeout=5 || true
+    properties=$(udevadm info --query=property --name="$FLASH_DEVICE") || return 1
+    model=$(printf '%s\n' "$properties" | sed -n 's/^ID_MODEL=//p')
+    serial=$(printf '%s\n' "$properties" | sed -n 's/^ID_SERIAL_SHORT=//p')
+    if [ "$model" != "$FLASH_MODEL" ] || [ "$serial" != "$FLASH_SERIAL" ]; then
+        echo "Refusing unexpected disk before write: model='$model' serial='$serial'." >&2
+        return 1
+    fi
+    device_type=$(lsblk -dn -o TYPE "$FLASH_DEVICE" | xargs)
+    [ "$device_type" = disk ] || { echo "$FLASH_DEVICE is not a whole disk." >&2; return 1; }
+    device_bytes=$(sudo blockdev --getsize64 "$FLASH_DEVICE") || return 1
+    [ "$device_bytes" -ge "$image_bytes" ] || {
+        echo "$FLASH_DEVICE is too small immediately before write." >&2
+        return 1
+    }
+}
+
+# Wait through reader enumeration and the no-media state until capacity is usable.
 wait_for_sd_card() {
     local deadline=$((SECONDS + SD_WAIT_SECONDS)) device_type device_bytes properties model serial
     echo "Waiting up to ${SD_WAIT_SECONDS}s for $FLASH_MODEL (serial $FLASH_SERIAL) as $FLASH_DEVICE..."
@@ -104,7 +179,6 @@ wait_for_sd_card() {
             fi
             echo "Detected SD card:"
             lsblk -dn -o NAME,SIZE,MODEL,TRAN "$FLASH_DEVICE"
-            FLASH_DEVICE=$(readlink -f "$FLASH_DEVICE")
             return 0
         fi
         sleep 0.5
@@ -116,13 +190,19 @@ wait_for_sd_card() {
 
 case "${1:-flash}" in
     status) power_state; exit 0 ;;
+    mux-status)
+        resolve_sdmux_device
+        sudo "$SDMUX" "$SDMUX_DEVICE" get
+        exit
+        ;;
     on) set_power_state ON; exit ;;
     off) set_power_state OFF; exit ;;
     flash) ;;
-    *) echo "Usage: $0 [status|on|off|flash]" >&2; exit 2 ;;
+    *) echo "Usage: $0 [status|mux-status|on|off|flash]" >&2; exit 2 ;;
 esac
 
 if [ ! -f "$IMAGE" ]; then echo "Image not found: $IMAGE" >&2; exit 1; fi
+resolve_sdmux_device
 if [ ! -x "$SDMUX" ]; then echo "SD mux tool is not executable: $SDMUX" >&2; exit 1; fi
 mux_state=$(sudo "$SDMUX" "$SDMUX_DEVICE" get)
 case "$mux_state" in
@@ -143,9 +223,10 @@ if [ "$mux_state" = dut ]; then
     sudo "$SDMUX" "$SDMUX_DEVICE" host
 fi
 wait_for_sd_card
+verify_flash_device
 sudo "$IMAGER" --cli "$IMAGE" "$FLASH_DEVICE"
 sync
-sudo "$SDMUX" "$SDMUX_DEVICE" dut
+switch_mux_to_dut
 set_power_state ON
 power_was_off=0
 trap - EXIT
