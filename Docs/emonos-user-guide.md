@@ -61,19 +61,41 @@ repeatability is checked at a fixed output path.
 > state. Back up anything needed first. Never guess the output device.
 
 Identify the card by model and size, unmount its partitions, then write the
-whole image to the **disk device**, not a partition. For example, after
-carefully replacing `/dev/sdX` with the verified device:
+whole image to the **disk device**, not a partition. On the current bench,
+use the included [`flash.sh`](../flash.sh), which checks Tasmota status and
+queries `usbsdmux ... get` before acting. If the mux is already in host mode,
+it does not toggle it again; if it is in DUT mode, it switches to host mode.
+Some readers appear as a 0-byte disk even with no card inserted, so the script
+waits for the selected whole-disk device to reach the image's capacity, then
+verifies udev model `sdFST_HS-SD_MMC` and serial `00048.01903`. It flashes,
+returns the mux to DUT mode and powers the Pi on. Its default target is the stable
+`/dev/disk/by-id/usb-LinuxAut_sdFST_HS-SD_MMC_00048.01903-0:0`; inspect `lsblk`
+first and override `EMONOS_FLASH_DEVICE`, `EMONOS_FLASH_MODEL` and
+`EMONOS_FLASH_SERIAL` if your SD-mux reader has a different identity:
 
 ```sh
+./flash.sh status
 lsblk -p -o NAME,SIZE,MODEL,TRAN,FSTYPE,MOUNTPOINTS
-sha256sum output/rpi4/images/emonos-rpi4.img
-sudo umount /dev/sdX?* 2>/dev/null || true
-sudo dd if=output/rpi4/images/emonos-rpi4.img of=/dev/sdX \
-  bs=4M status=progress conv=fsync
+EMONOS_FLASH_DEVICE=/dev/sdX ./flash.sh flash
 ```
 
-Re-run `lsblk` after writing and verify that the device/partition layout is
-the intended card. Raspberry Pi Imager can also write the `.img` file.
+`flash.sh` uses the Tasmota UI status/toggle endpoint because `/cm` returns
+an empty response from the current switch firmware. Its power setter checks
+state first, so `./flash.sh on` and `./flash.sh off` are safe to repeat. Before
+writing, the flash path rechecks mux mode, reader identity and capacity while
+keeping the stable by-id path. On failure it attempts to return the mux to
+DUT; it powers the Pi on only after confirming DUT mode. If mux recovery fails,
+the Pi is left off for manual recovery. The script waits up to 60 seconds for
+SD media; override the wait with `EMONOS_SD_WAIT_SECONDS`. You can also use
+Raspberry Pi Imager or `dd` manually, but then you must perform the SD-mux
+and power sequence yourself. `usbsdmux` and `imager` are discovered on
+`PATH` first; set `EMONOS_SDMUX` or `EMONOS_IMAGER` if installed elsewhere.
+Use `./flash.sh mux-status` to read the mux mode; the script resolves its
+`/dev/sg*` control node by reader model because SCSI-generic numbering changes
+between connections. Override with `EMONOS_SDMUX_DEVICE` if more than one
+reader with the same model is attached; `EMONOS_SDMUX_SCSI_MODEL` changes the
+model match.
+Re-run `lsblk` after writing and confirm the intended card layout.
 
 The image initializes both A/B payloads, with A bootable and B initially
 ineligible. The data partition grows to the installed card capacity on first

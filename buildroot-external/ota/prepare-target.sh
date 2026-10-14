@@ -33,10 +33,10 @@ else
     echo 'Unsupported RAUC board' >&2
     exit 1
 fi
-test -s "$keys/dev-cert.pem" && test -s "$keys/dev-key.pem" || {
+if [ ! -s "$keys/dev-cert.pem" ] || [ ! -s "$keys/dev-key.pem" ]; then
     echo 'Missing RAUC credentials; run make rauc_dev_keys first' >&2
     exit 1
-}
+fi
 mkdir -p "$target/etc/rauc" "$target/usr/lib/emonos"
 install -m 0644 "$keys/dev-cert.pem" "$target/etc/rauc/keyring.pem"
 sed -e "s/@COMPATIBLE@/emonos-$board/" -e "s/@BOOTLOADER@/$bootloader/" \
