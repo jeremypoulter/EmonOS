@@ -87,9 +87,6 @@ jobs:
             test: false
     # A cold Buildroot build took about 94 minutes on a standard hosted runner.
     timeout-minutes: 180
-    env:
-      # Shared across targets: the download cache is keyed by Buildroot revision.
-      CACHE_ROOT: ${{ runner.temp }}/emonos-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,19 +110,21 @@ jobs:
 
       - name: Derive Buildroot cache keys
         id: keys
-        run: echo "buildroot=$(git -C buildroot rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "buildroot=$(git -C buildroot rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "CACHE_ROOT=$RUNNER_TEMP/emonos-cache" >> "$GITHUB_ENV"
 
       - name: Cache Buildroot downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.CACHE_ROOT }}/dl
+          path: ${{ runner.temp }}/emonos-cache/dl
           key: buildroot-dl-${{ runner.os }}-${{ steps.keys.outputs.buildroot }}
 
       - name: Cache ${{ matrix.target }} compiler objects
         id: ccache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.CACHE_ROOT }}/ccache/${{ matrix.target }}
+          path: ${{ runner.temp }}/emonos-cache/ccache/${{ matrix.target }}
           key: ccache-${{ runner.os }}-${{ matrix.target }}-${{ steps.keys.outputs.buildroot }}-${{ hashFiles(format('buildroot-external/configs/{0}_defconfig', matrix.make_target), 'buildroot-external/board/**', 'ci/builder/Dockerfile', 'Makefile') }}
           restore-keys: |
             ccache-${{ runner.os }}-${{ matrix.target }}-${{ steps.keys.outputs.buildroot }}-
