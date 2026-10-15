@@ -116,11 +116,13 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
     assert "Hello from Docker!" in output
 
 
-@pytest.mark.timeout(1200)
+@pytest.mark.timeout(2100)
 def test_app_stack(command) -> None:
     """T2, HC-1: first boot loads images and serves the emoncms application."""
+    # TCG on a hosted runner writes the qcow2 overlay to disk, not tmpfs; the
+    # first boot of the preloaded stack needs far longer than a local run.
     if not command.poll_until_success(
-        "systemctl is-active --quiet emonos-app.service", tries=225, timeout=900.0, sleepduration=4
+        "systemctl is-active --quiet emonos-app.service", tries=450, timeout=1800.0, sleepduration=4
     ):
         diagnostics = command.run_check(
             "SYSTEMD_PAGER=cat systemctl status --no-pager -l emonos-app.service "
