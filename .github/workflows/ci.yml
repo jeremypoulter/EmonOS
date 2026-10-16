@@ -50,6 +50,12 @@ jobs:
               "buildroot-external/configs/${target}_defconfig"
           done
 
+      - name: Validate Buildroot ccache selection
+        run: |
+          for target in emonos_x86_64_vm emonos_rpi4; do
+            grep -qx 'BR2_CCACHE=y' "buildroot-external/configs/${target}_defconfig"
+          done
+
       - name: Compile Python test harness
         run: python3 -m py_compile tests/*.py buildroot-external/app/*.py
 
@@ -114,15 +120,16 @@ jobs:
           echo "buildroot=$(git -C buildroot rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "CACHE_ROOT=$RUNNER_TEMP/emonos-cache" >> "$GITHUB_ENV"
 
-      - name: Cache Buildroot downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Buildroot downloads
+        id: downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/emonos-cache/dl
           key: buildroot-dl-${{ runner.os }}-${{ steps.keys.outputs.buildroot }}
 
-      - name: Cache ${{ matrix.target }} compiler objects
+      - name: Restore ${{ matrix.target }} compiler objects
         id: ccache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/emonos-cache/ccache/${{ matrix.target }}
           key: ccache-${{ runner.os }}-${{ matrix.target }}-${{ steps.keys.outputs.buildroot }}-${{ hashFiles(format('buildroot-external/configs/{0}_defconfig', matrix.make_target), 'buildroot-external/board/**', 'ci/builder/Dockerfile', 'Makefile') }}
@@ -165,15 +172,16 @@ jobs:
 
       - name: Build ${{ matrix.target }} image
         env:
-          EMONOS_CCACHE_MAXSIZE: 3G
+          EMONOS_CCACHE_MAXSIZE: 2G
         run: |
+          rm -f "$CACHE_ROOT/ccache/${{ matrix.target }}/statslog"
           ci/builder/run.sh emonos-builder:ci \
             "$CACHE_ROOT/dl" "$CACHE_ROOT/ccache/${{ matrix.target }}" \
             make ${{ matrix.make_target }}
 
       - name: Verify deterministic image assembly
         env:
-          EMONOS_CCACHE_MAXSIZE: 3G
+          EMONOS_CCACHE_MAXSIZE: 2G
         run: |
           image='output/${{ matrix.target }}/images/emonos-${{ matrix.target }}.img'
           before=$(sha256sum "$image" | cut -d' ' -f1)
@@ -185,31 +193,86 @@ jobs:
           test "$before" = "$after"
 
       - name: Record ccache statistics
-        if: always()
+        if: ${{ !cancelled() }}
+        env:
+          EMONOS_CCACHE_MAXSIZE: 2G
         run: |
           {
             echo '### ccache: ${{ matrix.target }}'
             echo '```'
             ci/builder/run.sh emonos-builder:ci \
               "$CACHE_ROOT/dl" "$CACHE_ROOT/ccache/${{ matrix.target }}" \
-              output/${{ matrix.target }}/host/bin/ccache --show-stats || echo 'ccache statistics unavailable'
+              sh -c 'output/${{ matrix.target }}/host/bin/ccache --show-log-stats && output/${{ matrix.target }}/host/bin/ccache --show-stats' \
+              || echo 'ccache statistics unavailable'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # The per-run log is only for the summary; do not store it in the cache.
+          rm -f "$CACHE_ROOT/ccache/${{ matrix.target }}/statslog"
+
+      - name: Save Buildroot downloads
+        if: ${{ !cancelled() && steps.downloads.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/emonos-cache/dl
+          key: buildroot-dl-${{ runner.os }}-${{ steps.keys.outputs.buildroot }}
+
+      - name: Save ${{ matrix.target }} compiler objects
+        if: ${{ !cancelled() && steps.ccache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/emonos-cache/ccache/${{ matrix.target }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+
+      - name: Record runner capabilities
+        if: matrix.test
+        run: |
+          {
+            echo '### Runner: x86-64-vm test'
+            echo '```'
+            echo "vCPUs: $(nproc)"
+            lscpu | sed -n 's/^Model name: *//p'
+            free -m | sed -n '2p'
+            if test -c /dev/kvm; then echo '/dev/kvm: present'; else echo '/dev/kvm: absent'; fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Test x86-64 VM under TCG
         if: matrix.test
         env:
-          # GitHub-hosted runners do not expose /dev/kvm. The normal local
-          # default remains KVM; CI uses portable software emulation.
+          # The tests deliberately use portable software emulation (TCG), not
+          # KVM, so results do not depend on nested virtualization. Use all
+          # runner vCPUs for the guest: first boot (docker load + MariaDB
+          # initialisation) is close to the shipped 300-second health deadline.
           EMONOS_QEMU_CPU: max
-          EMONOS_QEMU_EXTRA_ARGS: -accel tcg,thread=multi
+          EMONOS_QEMU_EXTRA_ARGS: -accel tcg,thread=multi -smp 4
           EMONOS_QEMU_DISABLE_IO_URING: '1'
           EMONOS_QEMU_MIN_AVAILABLE_MB: '4096'
           # The launcher boots every test from a temporary qcow2 overlay, so the
           # source image is never written.
           EMONOS_QEMU_RAUC_BUNDLE: ${{ github.workspace }}/output/x86-64-vm/images/emonos-x86-64-vm.raucb
           EMONOS_RUN_REBOOT_TEST: '1'
-        run: tests/run.sh x86-64-vm -q
+        run: |
+          # Flush the build's dirty pages so they do not compete with the guest's I/O.
+          sync
+          tests/run.sh x86-64-vm -q
+
+      - name: Summarize guest reboots
+        if: ${{ !cancelled() && matrix.test }}
+        run: |
+          console='output/test-results/x86-64-vm/labgrid/console_main'
+          test -f "$console" || exit 0
+          clean=$(mktemp)
+          sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$console" | tr -d '\r' > "$clean"
+          {
+            echo '### Guest console: x86-64-vm'
+            echo '```'
+            echo "Guest boots (Booting Slot A): $(grep -c 'Booting Slot A' "$clean" || true)"
+            echo "Orderly restarts: $(grep -c 'reboot: Restarting system' "$clean" || true)"
+            echo "Health-monitor shutdowns: $(grep -c 'Stopped EmonOS bounded application health' "$clean" || true)"
+            echo 'One orderly restart is expected (test_feed_survives_reboot). Any'
+            echo 'health-monitor shutdown means the app missed the 300-second deadline.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record build evidence
         if: always()

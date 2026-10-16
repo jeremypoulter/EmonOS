@@ -32,7 +32,8 @@ ci/builder/run.sh emonos-builder:local "$HOME/.cache/emonos/dl" \
 
 The wrapper runs as the caller's UID and GID, so outputs stay owned by the
 checkout owner. It does not use any secrets or registry login. It sets
-`CCACHE_MAXSIZE` to `EMONOS_CCACHE_MAXSIZE` (default `3G`).
+`CCACHE_MAXSIZE` to `EMONOS_CCACHE_MAXSIZE` (default `2G`) and writes a
+per-run ccache statistics log to `/cache/ccache/statslog`.
 
 ## Security note
 
@@ -44,6 +45,8 @@ change `run.sh` or the Dockerfile on a self-hosted runner.
 ## Caches
 
 - Buildroot downloads are keyed by the pinned Buildroot submodule revision.
+- Both defconfigs set `BR2_CCACHE=y`; the cache location comes from
+  `BR2_CCACHE_DIR` (`/cache/ccache` in the builder, `~/.buildroot-ccache` locally).
 - ccache is keyed per target by Buildroot revision, the target defconfig, the
   board files, this Dockerfile and the top-level Makefile.
 - `output/` is never cached. It contains absolute build paths and is large.

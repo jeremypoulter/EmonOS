@@ -34,7 +34,8 @@ exec docker run --rm \
     --env BR2_CCACHE_DIR=/cache/ccache \
     --env BR_CACHE_DIR=/cache/ccache \
     --env CCACHE_DIR=/cache/ccache \
-    --env CCACHE_MAXSIZE="${EMONOS_CCACHE_MAXSIZE:-3G}" \
+    --env CCACHE_MAXSIZE="${EMONOS_CCACHE_MAXSIZE:-2G}" \
+    --env CCACHE_STATSLOG=/cache/ccache/statslog \
     --volume "$repo_dir:/workspace" \
     --volume "$download_dir:/cache/dl" \
     --volume "$ccache_dir:/cache/ccache" \
