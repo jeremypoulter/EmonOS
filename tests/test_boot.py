@@ -235,6 +235,12 @@ def test_feed_survives_reboot(command, target) -> None:
         "systemctl is-active --quiet emonos-app.service",
         tries=90, timeout=360.0, sleepduration=4,
     )
+    # The unit is active before the web container accepts connections. Wait for
+    # HTTP as test_app_stack does, or the first authenticated request races it.
+    assert command.poll_until_success(
+        "curl -fsS --max-time 10 http://127.0.0.1/ >/dev/null",
+        tries=30, timeout=90.0, sleepduration=3,
+    )
     assert command.run_check(f"sha256sum {feed}") == [original]
     assert command.run_check("cat /etc/machine-id") == [machine_id]
     assert command.run_check("sha256sum /mnt/data/ssh/ssh_host_ed25519_key.pub") == [host_key]
