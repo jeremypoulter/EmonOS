@@ -117,7 +117,7 @@ resolve_sdmux_device() {
 
 # Revalidate the by-id target immediately before a destructive write.
 verify_flash_device() {
-    local mux_state properties model serial device_type device_bytes
+    local mux_state properties model serial device_type device_bytes write_properties write_model write_serial
     mux_state=$(sudo "$SDMUX" "$SDMUX_DEVICE" get) || return 1
     if [ "$mux_state" != host ]; then
         echo "SD mux changed to '$mux_state'; expected host before writing." >&2
@@ -134,7 +134,25 @@ verify_flash_device() {
     fi
     device_type=$(lsblk -dn -o TYPE "$FLASH_DEVICE" | xargs)
     [ "$device_type" = disk ] || { echo "$FLASH_DEVICE is not a whole disk." >&2; return 1; }
-    device_bytes=$(sudo blockdev --getsize64 "$FLASH_DEVICE") || return 1
+    FLASH_WRITE_DEVICE=$(readlink -e "$FLASH_DEVICE") || return 1
+    case "$FLASH_WRITE_DEVICE" in
+        /dev/sd*) ;;
+        *) echo "Resolved flash target is not a /dev/sd* disk: $FLASH_WRITE_DEVICE." >&2; return 1 ;;
+    esac
+    write_properties=$(udevadm info --query=property --name="$FLASH_WRITE_DEVICE") || return 1
+    write_model=$(printf '%s\n' "$write_properties" | sed -n 's/^ID_MODEL=//p')
+    write_serial=$(printf '%s\n' "$write_properties" | sed -n 's/^ID_SERIAL_SHORT=//p')
+    if [ "$write_model" != "$FLASH_MODEL" ] || [ "$write_serial" != "$FLASH_SERIAL" ]; then
+        echo "Resolved write node changed identity: model='$write_model' serial='$write_serial'." >&2
+        return 1
+    fi
+    if [ "$(readlink -e "$FLASH_DEVICE")" != "$FLASH_WRITE_DEVICE" ]; then
+        echo 'Stable by-id path changed while validating the flash target.' >&2
+        return 1
+    fi
+    device_type=$(lsblk -dn -o TYPE "$FLASH_WRITE_DEVICE" | xargs)
+    [ "$device_type" = disk ] || { echo "$FLASH_WRITE_DEVICE is not a whole disk." >&2; return 1; }
+    device_bytes=$(sudo blockdev --getsize64 "$FLASH_WRITE_DEVICE") || return 1
     [ "$device_bytes" -ge "$image_bytes" ] || {
         echo "$FLASH_DEVICE is too small immediately before write." >&2
         return 1
@@ -213,7 +231,6 @@ esac
 if [ ! -x "$IMAGER" ]; then echo "Imager is not executable: $IMAGER" >&2; exit 1; fi
 image_bytes=$(stat -c %s "$IMAGE")
 
-echo "Image SHA-256: $(sha256sum "$IMAGE" | awk '{print $1}')"
 echo "Writing $IMAGE to $FLASH_DEVICE (this erases the destination card)."
 sudo -v
 trap restore_after_failure EXIT
@@ -224,7 +241,10 @@ if [ "$mux_state" = dut ]; then
 fi
 wait_for_sd_card
 verify_flash_device
-sudo "$IMAGER" --cli "$IMAGE" "$FLASH_DEVICE"
+# Imager requires the canonical whole-disk path for this fixed USB reader.
+# Keep the stable by-id path for discovery/revalidation; pass its just-checked
+# canonical node to Imager without --enable-writing-system-drives.
+sudo "$IMAGER" --cli "$IMAGE" "$FLASH_WRITE_DEVICE"
 sync
 switch_mux_to_dut
 set_power_state ON
