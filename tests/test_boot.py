@@ -116,19 +116,44 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
     assert "Hello from Docker!" in output
 
 
-@pytest.mark.timeout(1200)
+@pytest.mark.timeout(2100)
 def test_app_stack(command) -> None:
     """T2, HC-1: first boot loads images and serves the emoncms application."""
-    if not command.poll_until_success(
-        "systemctl is-active --quiet emonos-app.service", tries=225, timeout=900.0, sleepduration=4
-    ):
-        diagnostics = command.run_check(
+    # TCG on a hosted runner writes the qcow2 overlay to disk, not tmpfs; the
+    # first boot of the preloaded stack needs far longer than a local run.
+    try:
+        started = command.poll_until_success(
+            "systemctl is-active --quiet emonos-app.service", tries=450, timeout=1800.0, sleepduration=4
+        )
+    except Exception as error:
+        started = False
+        reason = f"{type(error).__name__}: {str(error).splitlines()[0]}"
+    else:
+        reason = "not active within the poll budget"
+    if not started:
+        # Collect diagnostics even when the console wait itself raised: that is
+        # the failure mode seen on hosted runs, and it hid the journal before.
+        def diagnose(command_text: str) -> list[str]:
+            try:
+                return command.run_check(command_text)
+            except Exception as error:
+                return [f"diagnostic failed: {type(error).__name__}"]
+
+        diagnostics = diagnose(
             "SYSTEMD_PAGER=cat systemctl status --no-pager -l emonos-app.service "
             "emonos-preload.service mnt-data.mount var-lib-docker.mount || true"
         )
-        logs = command.run_check("journalctl --no-pager -u emonos-app.service -n 30 || true")
-        db_logs = command.run_check("docker logs emonos-db-1 2>&1 | tail -30 || true")
-        pytest.fail("app did not start: " + "\n".join([*diagnostics, *logs, *db_logs]))
+        health = diagnose(
+            "journalctl --no-pager -u emonos-health.service -u emonos-preload.service -n 40 || true"
+        )
+        records = diagnose(
+            "for f in /mnt/data/health/failures/*.json /mnt/data/health/last-good.json; "
+            "do test -f \"$f\" && cat \"$f\"; done; true"
+        )
+        logs = diagnose("journalctl --no-pager -u emonos-app.service -n 30 || true")
+        db_logs = diagnose("docker logs emonos-db-1 2>&1 | tail -30 || true")
+        pytest.fail(f"app did not start ({reason}): " + "\n".join(
+            [*diagnostics, *health, *records, *logs, *db_logs]))
     command.run_check("test ! -e /mnt/data/preload/images.tar")
     command.run_check("test ! -e /mnt/data/preload/images.tar.sha256")
     services = command.run_check(
@@ -232,6 +257,12 @@ def test_feed_survives_reboot(command, target) -> None:
     assert command.poll_until_success(
         "systemctl is-active --quiet emonos-app.service",
         tries=90, timeout=360.0, sleepduration=4,
+    )
+    # The unit is active before the web container accepts connections. Wait for
+    # HTTP as test_app_stack does, or the first authenticated request races it.
+    assert command.poll_until_success(
+        "curl -fsS --max-time 10 http://127.0.0.1/ >/dev/null",
+        tries=30, timeout=90.0, sleepduration=3,
     )
     assert command.run_check(f"sha256sum {feed}") == [original]
     assert command.run_check("cat /etc/machine-id") == [machine_id]
