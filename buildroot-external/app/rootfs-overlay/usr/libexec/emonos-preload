@@ -10,8 +10,30 @@ mkdir -p "$(dirname "$done")"
 test -f "$archive"
 test -f "$checksum"
 expected=$(cat "$checksum")
-actual=$(sha256sum "$archive" | awk '{print $1}')
-test "$actual" = "$expected"
-docker load -i "$archive"
+
+# Verify and load in one pass. Hashing the archive first costs a full extra
+# read and CPU pass before docker can start; on a multi-core device the two now
+# overlap. The checksum detects corruption of the archive on the data
+# partition; it does not authenticate it. The unit fails, and keeps the
+# archive, on a mismatch, so emonos-app (which requires this unit) never starts
+# from unverified images.
+work=$(mktemp -d /run/emonos-preload.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+mkfifo "$work/archive"
+sha256sum < "$work/archive" | awk '{print $1}' > "$work/actual" &
+hasher=$!
+
+load_status=0
+tee "$work/archive" < "$archive" | docker load || load_status=$?
+hash_status=0
+wait "$hasher" || hash_status=$?
+
+test "$load_status" -eq 0
+test "$hash_status" -eq 0
+actual=$(cat "$work/actual")
+if test "$actual" != "$expected"; then
+    echo "emonos-preload: archive checksum mismatch (expected $expected, got $actual)" >&2
+    exit 1
+fi
 rm -f "$archive" "$checksum"
 touch "$done"
