@@ -163,9 +163,32 @@ jobs:
           sudo apt-get install --yes qemu-system-x86 ovmf jq strace
           python -m pip install --requirement tests/requirements.txt
 
+      - name: Enable KVM acceleration if the runner offers it
+        id: kvm
+        if: matrix.test
+        run: |
+          # Standard hosted runners expose /dev/kvm (nested virtualization) but
+          # restrict it to the kvm group. Relax it for this ephemeral runner,
+          # then prove QEMU can really initialise KVM before relying on it.
+          accel=tcg
+          if test -c /dev/kvm; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+            if echo quit | qemu-system-x86_64 -accel kvm -machine q35 -cpu host -m 256 \
+                -display none -nodefaults -S -monitor stdio > /dev/null 2>&1; then
+              accel=kvm
+            fi
+          fi
+          if test "$accel" = tcg; then
+            echo '::warning::KVM is unavailable; falling back to slow TCG emulation.'
+          fi
+          echo "accel=$accel" >> "$GITHUB_OUTPUT"
+
       - name: Test QEMU launcher on a clean runner
         if: matrix.test
-        run: python -m pytest -q tests/test_qemu_launcher.py tests/test_docker_archive.py tests/test_ota_scripts.py tests/test_health.py
+        run: python -m pytest -q tests/test_qemu_launcher.py tests/test_docker_archive.py tests/test_ota_scripts.py tests/test_health.py tests/test_preload.py tests/test_ci_evidence.py
 
       - name: Create ephemeral PoC signing credentials
         run: make rauc_dev_keys
@@ -233,18 +256,19 @@ jobs:
             lscpu | sed -n 's/^Model name: *//p'
             free -m | sed -n '2p'
             if test -c /dev/kvm; then echo '/dev/kvm: present'; else echo '/dev/kvm: absent'; fi
+            echo "guest acceleration: ${{ steps.kvm.outputs.accel }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Test x86-64 VM under TCG
+      - name: Test x86-64 VM (${{ steps.kvm.outputs.accel == 'kvm' && 'KVM' || 'TCG fallback' }})
         if: matrix.test
         env:
-          # The tests deliberately use portable software emulation (TCG), not
-          # KVM, so results do not depend on nested virtualization. Use all
-          # runner vCPUs for the guest: first boot (docker load + MariaDB
-          # initialisation) is close to the shipped 300-second health deadline.
-          EMONOS_QEMU_CPU: max
-          EMONOS_QEMU_EXTRA_ARGS: -accel tcg,thread=multi -smp 4
+          # KVM runs the guest at near-native speed. If the runner cannot offer
+          # it, fall back to portable TCG emulation; first boot is then close
+          # to the shipped 300-second health deadline. Either way the guest
+          # gets all runner vCPUs.
+          EMONOS_QEMU_CPU: ${{ steps.kvm.outputs.accel == 'kvm' && 'host' || 'max' }}
+          EMONOS_QEMU_EXTRA_ARGS: ${{ steps.kvm.outputs.accel == 'kvm' && '-accel kvm -smp 4' || '-accel tcg,thread=multi -smp 4' }}
           EMONOS_QEMU_DISABLE_IO_URING: '1'
           EMONOS_QEMU_MIN_AVAILABLE_MB: '4096'
           # The launcher boots every test from a temporary qcow2 overlay, so the
