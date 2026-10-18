@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from common import app_check_command
+from common import app_check_command, console_log_text, summarize_console, wait_for_app
 
 
 REQUIRED_CGROUP_CONTROLLERS = {"cpu", "cpuset", "io", "memory", "pids"}
@@ -116,44 +116,39 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
     assert "Hello from Docker!" in output
 
 
-@pytest.mark.timeout(2100)
-def test_app_stack(command) -> None:
+@pytest.mark.timeout(1200)
+def test_app_stack(command, target_name: str) -> None:
     """T2, HC-1: first boot loads images and serves the emoncms application."""
-    # TCG on a hosted runner writes the qcow2 overlay to disk, not tmpfs; the
-    # first boot of the preloaded stack needs far longer than a local run.
-    try:
-        started = command.poll_until_success(
-            "systemctl is-active --quiet emonos-app.service", tries=450, timeout=1800.0, sleepduration=4
-        )
-    except Exception as error:
-        started = False
-        reason = f"{type(error).__name__}: {str(error).splitlines()[0]}"
-    else:
-        reason = "not active within the poll budget"
+    started, timeline, reason = wait_for_app(command, budget=900.0)
     if not started:
-        # Collect diagnostics even when the console wait itself raised: that is
-        # the failure mode seen on hosted runs, and it hid the journal before.
-        def diagnose(command_text: str) -> list[str]:
-            try:
-                return command.run_check(command_text)
-            except Exception as error:
-                return [f"diagnostic failed: {type(error).__name__}"]
-
-        diagnostics = diagnose(
-            "SYSTEMD_PAGER=cat systemctl status --no-pager -l emonos-app.service "
-            "emonos-preload.service mnt-data.mount var-lib-docker.mount || true"
-        )
-        health = diagnose(
-            "journalctl --no-pager -u emonos-health.service -u emonos-preload.service -n 40 || true"
-        )
-        records = diagnose(
-            "for f in /mnt/data/health/failures/*.json /mnt/data/health/last-good.json; "
-            "do test -f \"$f\" && cat \"$f\"; done; true"
-        )
-        logs = diagnose("journalctl --no-pager -u emonos-app.service -n 30 || true")
-        db_logs = diagnose("docker logs emonos-db-1 2>&1 | tail -30 || true")
-        pytest.fail(f"app did not start ({reason}): " + "\n".join(
-            [*diagnostics, *health, *records, *logs, *db_logs]))
+        console = summarize_console(console_log_text(target_name))
+        details = [
+            f"app did not start: {reason}",
+            f"serial console: {console['boots']} boot(s), {console['restarts']} restart(s), "
+            f"{console['health_monitor_stops']} health-monitor shutdown(s)",
+        ]
+        if console["health_monitor_stops"]:
+            details.append(
+                "The health monitor's 300-second window expired before the app was up, "
+                "so it rebooted the guest."
+            )
+        details.append("last status samples:")
+        details.extend(f"  {line}" for line in timeline[-8:])
+        if "console lost" not in reason:
+            for label, query in (
+                ("units", "SYSTEMD_PAGER=cat systemctl status --no-pager -l emonos-app.service "
+                          "emonos-preload.service mnt-data.mount var-lib-docker.mount || true"),
+                ("preload+health journal", "journalctl --no-pager -o short-monotonic "
+                          "-u emonos-health -u emonos-preload -n 40 || true"),
+                ("app journal", "journalctl --no-pager -o short-monotonic -u emonos-app -n 30 || true"),
+                ("mariadb", "docker logs -t emonos-db-1 2>&1 | tail -40 || true"),
+            ):
+                try:
+                    details.append(f"--- {label}")
+                    details.extend(command.run_check(query, timeout=60))
+                except Exception as error:
+                    details.append(f"diagnostic unavailable: {type(error).__name__}")
+        pytest.fail("\n".join(details))
     command.run_check("test ! -e /mnt/data/preload/images.tar")
     command.run_check("test ! -e /mnt/data/preload/images.tar.sha256")
     services = command.run_check(
