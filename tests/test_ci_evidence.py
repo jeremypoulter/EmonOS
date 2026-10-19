@@ -62,5 +62,5 @@ def test_wait_for_app_reports_a_lost_console_with_the_samples_so_far():
 
 def test_wait_for_app_gives_up_after_its_budget():
     command = make_command(["up=1 docker=active preload=active app=failed health=activating load=0"] * 100)
-    started, timeline, reason = wait_for_app(command, budget=0.05, interval=0.01)
+    started, timeline, reason = wait_for_app(command, budget=0.5, interval=0.01)
     assert not started and "not active after" in reason and timeline

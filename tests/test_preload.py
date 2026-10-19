@@ -14,7 +14,8 @@ SCRIPT = (Path(__file__).parents[1]
 REQUIRED_TOOLS = ("mkfifo", "tee", "sha256sum", "awk", "mktemp")
 
 
-def run_preload(tmp_path, archive: bytes, checksum: str, docker_exit: int = 0):
+def run_preload(tmp_path, archive: bytes, checksum: str, docker_exit: int = 0,
+                unreadable: bool = False):
     missing = [tool for tool in REQUIRED_TOOLS if not shutil.which(tool)]
     if missing:
         pytest.skip(f"host lacks {', '.join(missing)}")
@@ -22,6 +23,8 @@ def run_preload(tmp_path, archive: bytes, checksum: str, docker_exit: int = 0):
     (data / "preload").mkdir(parents=True)
     (tmp_path / "run").mkdir()
     (data / "preload/images.tar").write_bytes(archive)
+    if unreadable:
+        (data / "preload/images.tar").chmod(0)
     (data / "preload/images.tar.sha256").write_text(checksum + "\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -34,7 +37,7 @@ def run_preload(tmp_path, archive: bytes, checksum: str, docker_exit: int = 0):
     script.write_text(text)
     script.chmod(0o755)
     result = subprocess.run(
-        [str(script)], capture_output=True, text=True, timeout=60,
+        [str(script)], capture_output=True, text=True, timeout=15,
         env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
     )
     return result, data, received
@@ -67,3 +70,18 @@ def test_load_failure_is_not_marked_done(tmp_path):
     assert result.returncode != 0
     assert not (data / ".preload.done").exists()
     assert (data / "preload/images.tar").exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
+def test_unreadable_archive_fails_instead_of_hanging(tmp_path):
+    # The archive passes the existence check but cannot be opened. The hasher
+    # must not be left blocked on its FIFO, which would hang the unit.
+    archive = os.urandom(10_000)
+    try:
+        result, data, _ = run_preload(
+            tmp_path, archive, hashlib.sha256(archive).hexdigest(), unreadable=True,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("emonos-preload hung when the archive could not be opened")
+    assert result.returncode != 0
+    assert not (data / ".preload.done").exists()
