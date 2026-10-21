@@ -17,6 +17,12 @@ expected=$(cat "$checksum")
 # partition; it does not authenticate it. The unit fails, and keeps the
 # archive, on a mismatch, so emonos-app (which requires this unit) never starts
 # from unverified images.
+#
+# KNOWN, ACCEPTED RISK (R13 in Docs/emonos-poc-implementation-plan.md): the
+# images are streamed into Docker before the checksum is known, so on a
+# mismatch a still-valid archive's images and tags remain in Docker's store.
+# Nothing starts them, but they are not removed. Accepted by the maintainer;
+# revisit if branch protection / merge queues do not gate main as planned.
 work=$(mktemp -d /run/emonos-preload.XXXXXX)
 trap 'rm -rf "$work"' EXIT
 mkfifo "$work/archive"
