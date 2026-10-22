@@ -239,22 +239,28 @@ tests/run.sh x86-64-vm -k 'data_partition_growth or persistent_identity_and_ssh'
 
 ## CI builds
 
-`.github/workflows/ci.yml` lints the tree, builds the x86-64 image on a
-GitHub-hosted runner, and runs the shared VM suite with TCG (hosted runners
-do not provide KVM). A clean Buildroot toolchain takes about 94 minutes on
-that runner. The build needs at least 32 GiB free; CI removes unused SDKs
-from its disposable runner before checking capacity. It uploads checksums,
-the partition table and Buildroot configuration, not the raw disk image.
-Buildroot, container sources, action versions and Python are pinned. CI rebuilds
-each image on the same runner and requires an identical SHA-256 before testing.
-The build uses a fixed source epoch, UTC, stable partition/filesystem IDs and
-root-owned data staging; it does not require any development-harness directory.
-Buildroot's experimental reproducible mode only claims byte-identical output
-for the same absolute output path. Cross-host byte identity is not assumed.
+`.github/workflows/ci.yml` lints the tree, then builds **both** supported images
+on every pull request and push to `main`, one per GitHub-hosted runner and in
+parallel: the x86-64 VM and the Raspberry Pi 4. Each target runs Buildroot in
+the pinned host builder under `ci/builder/` (see its README), with a per-target
+ccache and a download cache keyed to the pinned Buildroot revision. The full
+`output/` tree is deliberately not cached.
 
-Use the workflow's manual **build_rpi4** input to build the x86 and Pi images
-in parallel on separate hosted runners. The Pi image is not tested in CI:
-its bootloader and application tests still require the physical bench.
+- The x86 job runs the shared VM suite. It uses KVM when the runner exposes
+  `/dev/kvm` (standard hosted runners do) and otherwise falls back to TCG
+  software emulation, with a warning. The job summary records which was used.
+- The Pi image is built and its repeated assembly is hashed, but it is not
+  tested in CI: its bootloader and application tests still require the bench.
+- A clean Buildroot toolchain takes about 94 minutes on a hosted runner. The
+  job checks for 40 GiB of free disk before building and fails early otherwise.
+- Each image is assembled twice into the same output path and the SHA-256 must
+  match. A fixed source epoch, UTC, stable partition/filesystem IDs, root-owned
+  data staging and a canonical Docker archive support this. Buildroot's
+  reproducible mode only claims identical output for the same absolute path, so
+  cross-host or cross-checkout identity is not assumed.
+- Each job uploads compact evidence (hashes, partition table, Buildroot
+  configuration, test logs), not the raw ~7 GiB disk image. Run the workflow
+  manually with `upload_images` to attach the raw images.
 
 The Raspberry Pi uses the same tests over its serial console. Supply the serial device at
 runtime rather than a numbered `/dev/ttyUSB*` path, which can change between boots. Use

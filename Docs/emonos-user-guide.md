@@ -83,7 +83,10 @@ EMONOS_FLASH_DEVICE=/dev/sdX ./flash.sh flash
 an empty response from the current switch firmware. Its power setter checks
 state first, so `./flash.sh on` and `./flash.sh off` are safe to repeat. Before
 writing, the flash path rechecks mux mode, reader identity and capacity while
-keeping the stable by-id path. On failure it attempts to return the mux to
+keeping the stable by-id path. Raspberry Pi Imager receives the path's
+canonical `/dev/sdX` node because it rejects the by-id alias for this fixed
+USB reader; the identity and capacity are rechecked immediately before that
+node is passed to Imager. On failure it attempts to return the mux to
 DUT; it powers the Pi on only after confirming DUT mode. If mux recovery fails,
 the Pi is left off for manual recovery. The script waits up to 60 seconds for
 SD media; override the wait with `EMONOS_SD_WAIT_SECONDS`. You can also use
