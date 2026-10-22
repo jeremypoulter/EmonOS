@@ -6,8 +6,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      build_rpi4:
-        description: Build the Raspberry Pi image in parallel (hardware tests remain manual)
+      upload_images:
+        description: Upload the raw ~7 GiB target disk images as artifacts (opt-in)
         type: boolean
         default: false
 
@@ -30,9 +30,14 @@ jobs:
       - name: Install lint tools
         run: sudo apt-get update && sudo apt-get install --yes shellcheck
 
+      - name: Check GitHub workflows with actionlint
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        with:
+          version: '1.7.12'
+
       - name: ShellCheck EmonOS scripts
         run: |
-          find buildroot-external -type f \( -name '*.sh' -o -path '*/usr/libexec/*' \) \
+          find buildroot-external ci tests -type f \( -name '*.sh' -o -path '*/usr/libexec/*' \) \
             -print0 | xargs -0r shellcheck
 
       - name: Validate Compose definition
@@ -45,6 +50,12 @@ jobs:
               "buildroot-external/configs/${target}_defconfig"
           done
 
+      - name: Validate Buildroot ccache selection
+        run: |
+          for target in emonos_x86_64_vm emonos_rpi4; do
+            grep -qx 'BR2_CCACHE=y' "buildroot-external/configs/${target}_defconfig"
+          done
+
       - name: Compile Python test harness
         run: python3 -m py_compile tests/*.py buildroot-external/app/*.py
 
@@ -54,7 +65,7 @@ jobs:
       - name: Reject developer-specific build paths
         run: |
           pattern='open''code|CLAUDE''_JOB_DIR'
-          if git grep -inE "$pattern" -- .github tests buildroot-external Makefile; then
+          if git grep -inE "$pattern" -- .github ci tests buildroot-external Makefile; then
             echo 'Build and test paths must not depend on a developer harness.' >&2
             exit 1
           fi
@@ -65,100 +76,237 @@ jobs:
         run: git show --check --format= HEAD
 
   build:
-    name: Build ${{ matrix.target }}${{ matrix.target == 'x86-64-vm' && ' and test' || '' }}
+    name: Build ${{ matrix.target }}${{ matrix.test && ' and test' || '' }}
     needs: lint
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
+      # Exactly the two supported targets, each on its own hosted runner.
+      max-parallel: 2
       matrix:
-        # Build both targets on separate runners when explicitly requested.
-        # A default PR/push builds only x86 because the Pi needs hardware for
-        # runtime validation and its separate Buildroot tree costs ~25 GiB.
-        target: ${{ fromJSON(inputs.build_rpi4 && '["x86-64-vm","rpi4"]' || '["x86-64-vm"]') }}
-    # A clean Buildroot toolchain + EDK2 + Go/Docker build took more than 75
-    # minutes on the standard GitHub runner. Keep the test bounded, but allow
-    # the cold build to finish before judging performance/cost.
+        include:
+          - target: x86-64-vm
+            make_target: emonos_x86_64_vm
+            test: true
+          - target: rpi4
+            make_target: emonos_rpi4
+            test: false
+    # A cold Buildroot build took about 94 minutes on a standard hosted runner.
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
+      - name: Check disk space for the Buildroot build
+        run: |
+          # This is an ephemeral GitHub-hosted runner. None of these SDKs are
+          # needed for Buildroot; keep setup-python's toolcache intact.
+          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h . "$RUNNER_TEMP" /var/lib/docker
+          # One target's output is about 28 GiB; the builder image, download
+          # cache and ccache add several GiB more. Fail before any build work.
+          required=$((40 * 1024 * 1024 * 1024))
+          available=$(df --output=avail -B1 . | tail -1)
+          if test "$available" -lt "$required"; then
+            echo "EmonOS needs at least 40 GiB free for a clean ${{ matrix.target }} build;" \
+              "only $((available / 1024 / 1024 / 1024)) GiB is available." >&2
+            exit 1
+          fi
+
+      - name: Derive Buildroot cache keys
+        id: keys
+        run: |
+          echo "buildroot=$(git -C buildroot rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "CACHE_ROOT=$RUNNER_TEMP/emonos-cache" >> "$GITHUB_ENV"
+
+      - name: Restore Buildroot downloads
+        id: downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/emonos-cache/dl
+          key: buildroot-dl-${{ runner.os }}-${{ steps.keys.outputs.buildroot }}
+
+      - name: Restore ${{ matrix.target }} compiler objects
+        id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/emonos-cache/ccache/${{ matrix.target }}
+          key: ccache-${{ runner.os }}-${{ matrix.target }}-${{ steps.keys.outputs.buildroot }}-${{ hashFiles(format('buildroot-external/configs/{0}_defconfig', matrix.make_target), 'buildroot-external/board/**', 'ci/builder/Dockerfile', 'Makefile') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ matrix.target }}-${{ steps.keys.outputs.buildroot }}-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build pinned host builder image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ci/builder
+          load: true
+          tags: emonos-builder:ci
+          # Separate GHA cache scopes keep the two target jobs from writing the
+          # same cache entries concurrently.
+          cache-from: type=gha,scope=builder-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=builder-${{ matrix.target }}
+
       - name: Set up Python
+        if: matrix.test
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14.7'
 
-      - name: Cache Buildroot downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: buildroot/dl
-          key: buildroot-dl-${{ runner.os }}-${{ hashFiles('buildroot-external/**', 'Makefile') }}
-          restore-keys: buildroot-dl-${{ runner.os }}-
-
-      - name: Install build and test dependencies
+      - name: Install QEMU test dependencies
+        if: matrix.test
         run: |
           sudo apt-get update
-          sudo apt-get install --yes \
-            bc bison build-essential cpio flex file g++ gcc git libncurses-dev \
-            jq mtools qemu-system-x86 ovmf rsync strace unzip wget
+          sudo apt-get install --yes qemu-system-x86 ovmf jq strace
+          python -m pip install --requirement tests/requirements.txt
 
-      - name: Install Python test dependencies
-        if: matrix.target == 'x86-64-vm'
-        run: python -m pip install --requirement tests/requirements.txt
+      - name: Enable KVM acceleration if the runner offers it
+        id: kvm
+        if: matrix.test
+        run: |
+          # Standard hosted runners expose /dev/kvm (nested virtualization) but
+          # restrict it to the kvm group. Relax it for this ephemeral runner,
+          # then prove QEMU can really initialise KVM before relying on it.
+          accel=tcg
+          if test -c /dev/kvm; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+            if echo quit | qemu-system-x86_64 -accel kvm -machine q35 -cpu host -m 256 \
+                -display none -nodefaults -S -monitor stdio > /dev/null 2>&1; then
+              accel=kvm
+            fi
+          fi
+          if test "$accel" = tcg; then
+            echo '::warning::KVM is unavailable; falling back to slow TCG emulation.'
+          fi
+          echo "accel=$accel" >> "$GITHUB_OUTPUT"
 
       - name: Test QEMU launcher on a clean runner
-        if: matrix.target == 'x86-64-vm'
-        run: python -m pytest -q tests/test_qemu_launcher.py tests/test_docker_archive.py tests/test_ota_scripts.py tests/test_health.py
-
-      - name: Reclaim unused SDK space and check disk budget
-        run: |
-          df -h .
-          # This is an ephemeral GitHub-hosted runner. None of these SDKs are
-          # needed for Buildroot; keep setup-python's toolcache intact.
-          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
-          df -h .
-          # Local clean Buildroot output is ~28 GiB. Fail before an expensive
-          # build if the runner image no longer leaves enough headroom.
-          available=$(df --output=avail -B1 . | tail -1)
-          if test "$available" -lt $((32 * 1024 * 1024 * 1024)); then
-            echo 'EmonOS requires at least 32 GiB free for a clean Buildroot build.' >&2
-            exit 1
-          fi
+        if: matrix.test
+        run: python -m pytest -q tests/test_qemu_launcher.py tests/test_docker_archive.py tests/test_ota_scripts.py tests/test_health.py tests/test_preload.py tests/test_ci_evidence.py
 
       - name: Create ephemeral PoC signing credentials
         run: make rauc_dev_keys
 
       - name: Build ${{ matrix.target }} image
+        env:
+          EMONOS_CCACHE_MAXSIZE: 2G
         run: |
-          case '${{ matrix.target }}' in
-            x86-64-vm) make emonos_x86_64_vm ;;
-            rpi4) make emonos_rpi4 ;;
-          esac
+          rm -f "$CACHE_ROOT/ccache/${{ matrix.target }}/statslog"
+          ci/builder/run.sh emonos-builder:ci \
+            "$CACHE_ROOT/dl" "$CACHE_ROOT/ccache/${{ matrix.target }}" \
+            make ${{ matrix.make_target }}
 
       - name: Verify deterministic image assembly
+        env:
+          EMONOS_CCACHE_MAXSIZE: 2G
         run: |
           image='output/${{ matrix.target }}/images/emonos-${{ matrix.target }}.img'
           before=$(sha256sum "$image" | cut -d' ' -f1)
-          case '${{ matrix.target }}' in
-            x86-64-vm) make emonos_x86_64_vm ;;
-            rpi4) make emonos_rpi4 ;;
-          esac
+          ci/builder/run.sh emonos-builder:ci \
+            "$CACHE_ROOT/dl" "$CACHE_ROOT/ccache/${{ matrix.target }}" \
+            make ${{ matrix.make_target }}
           after=$(sha256sum "$image" | cut -d' ' -f1)
           printf 'initial=%s\nrebuilt=%s\n' "$before" "$after" > image-reproducibility.txt
           test "$before" = "$after"
 
-      - name: Test x86-64 VM under TCG
-        if: matrix.target == 'x86-64-vm'
+      - name: Record ccache statistics
+        if: ${{ !cancelled() }}
         env:
-          # GitHub-hosted runners do not expose /dev/kvm. The normal local
-          # default remains KVM; CI uses portable software emulation.
-          EMONOS_QEMU_CPU: max
-          EMONOS_QEMU_EXTRA_ARGS: -accel tcg,thread=multi -snapshot
+          EMONOS_CCACHE_MAXSIZE: 2G
+        run: |
+          {
+            echo '### ccache: ${{ matrix.target }}'
+            echo '```'
+            ci/builder/run.sh emonos-builder:ci \
+              "$CACHE_ROOT/dl" "$CACHE_ROOT/ccache/${{ matrix.target }}" \
+              sh -c 'output/${{ matrix.target }}/host/bin/ccache --show-log-stats && output/${{ matrix.target }}/host/bin/ccache --show-stats' \
+              || echo 'ccache statistics unavailable'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # The per-run log is only for the summary; do not store it in the cache.
+          rm -f "$CACHE_ROOT/ccache/${{ matrix.target }}/statslog"
+
+      - name: Save Buildroot downloads
+        if: ${{ !cancelled() && steps.downloads.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/emonos-cache/dl
+          key: buildroot-dl-${{ runner.os }}-${{ steps.keys.outputs.buildroot }}
+
+      - name: Save ${{ matrix.target }} compiler objects
+        if: ${{ !cancelled() && steps.ccache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/emonos-cache/ccache/${{ matrix.target }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+
+      - name: Record runner capabilities
+        if: matrix.test
+        run: |
+          {
+            echo '### Runner: x86-64-vm test'
+            echo '```'
+            echo "vCPUs: $(nproc)"
+            lscpu | sed -n 's/^Model name: *//p'
+            free -m | sed -n '2p'
+            if test -c /dev/kvm; then echo '/dev/kvm: present'; else echo '/dev/kvm: absent'; fi
+            echo "guest acceleration: ${{ steps.kvm.outputs.accel }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Test x86-64 VM (${{ steps.kvm.outputs.accel == 'kvm' && 'KVM' || 'TCG fallback' }})
+        if: matrix.test
+        env:
+          # KVM runs the guest at near-native speed. If the runner cannot offer
+          # it, fall back to portable TCG emulation; first boot is then close
+          # to the shipped 300-second health deadline. Either way the guest
+          # gets all runner vCPUs.
+          EMONOS_QEMU_CPU: ${{ steps.kvm.outputs.accel == 'kvm' && 'host' || 'max' }}
+          EMONOS_QEMU_EXTRA_ARGS: ${{ steps.kvm.outputs.accel == 'kvm' && '-accel kvm -smp 4' || '-accel tcg,thread=multi -smp 4' }}
           EMONOS_QEMU_DISABLE_IO_URING: '1'
           EMONOS_QEMU_MIN_AVAILABLE_MB: '4096'
+          # The launcher boots every test from a temporary qcow2 overlay, so the
+          # source image is never written.
           EMONOS_QEMU_RAUC_BUNDLE: ${{ github.workspace }}/output/x86-64-vm/images/emonos-x86-64-vm.raucb
-        run: tests/run.sh x86-64-vm -q
+          EMONOS_RUN_REBOOT_TEST: '1'
+        run: |
+          report=output/test-results/x86-64-vm
+          mkdir -p "$report"
+          # Flush the build's dirty pages so they do not compete with the guest's I/O.
+          sync
+          # Record host CPU steal, I/O wait and pressure while the guest runs, so a
+          # slow first boot can be attributed to the runner rather than guessed at.
+          vmstat -t -w 5 > "$report/host-vmstat.txt" 2>&1 &
+          vmstat_pid=$!
+          { while sleep 5; do date -u +%T; cat /proc/pressure/cpu /proc/pressure/io; done; } \
+            > "$report/host-pressure.txt" 2>&1 &
+          pressure_pid=$!
+          trap 'kill "$vmstat_pid" "$pressure_pid" 2> /dev/null || true' EXIT
+          tests/run.sh x86-64-vm -q
+
+      - name: Summarize guest reboots
+        if: ${{ !cancelled() && matrix.test }}
+        run: |
+          console='output/test-results/x86-64-vm/labgrid/console_main'
+          test -f "$console" || exit 0
+          clean=$(mktemp)
+          sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$console" | tr -d '\r' > "$clean"
+          {
+            echo '### Guest console: x86-64-vm'
+            echo '```'
+            echo "Guest boots (Booting Slot A): $(grep -c 'Booting Slot A' "$clean" || true)"
+            echo "Orderly restarts: $(grep -c 'reboot: Restarting system' "$clean" || true)"
+            echo "Health-monitor shutdowns: $(grep -c 'Stopped EmonOS bounded application health' "$clean" || true)"
+            echo 'One orderly restart is expected (test_feed_survives_reboot). Any'
+            echo 'health-monitor shutdown means the app missed the 300-second deadline.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record build evidence
         if: always()
@@ -189,9 +337,18 @@ jobs:
 
       - name: Upload build evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.target }}-${{ github.sha }}
           path: ci-artifacts/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Upload raw disk image (opt-in)
+        if: inputs.upload_images
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.target }}-image-${{ github.sha }}
+          path: output/${{ matrix.target }}/images/emonos-${{ matrix.target }}.img
+          if-no-files-found: error
+          retention-days: 3

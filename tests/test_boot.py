@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from common import app_check_command
+from common import (
+    app_check_command, console_log_text, save_report_file, summarize_console, wait_for_app,
+)
 
 
 REQUIRED_CGROUP_CONTROLLERS = {"cpu", "cpuset", "io", "memory", "pids"}
@@ -117,18 +119,39 @@ def test_boot_runtime(command, expected_architecture: str) -> None:
 
 
 @pytest.mark.timeout(1200)
-def test_app_stack(command) -> None:
+def test_app_stack(command, target_name: str) -> None:
     """T2, HC-1: first boot loads images and serves the emoncms application."""
-    if not command.poll_until_success(
-        "systemctl is-active --quiet emonos-app.service", tries=225, timeout=900.0, sleepduration=4
-    ):
-        diagnostics = command.run_check(
-            "SYSTEMD_PAGER=cat systemctl status --no-pager -l emonos-app.service "
-            "emonos-preload.service mnt-data.mount var-lib-docker.mount || true"
-        )
-        logs = command.run_check("journalctl --no-pager -u emonos-app.service -n 30 || true")
-        db_logs = command.run_check("docker logs emonos-db-1 2>&1 | tail -30 || true")
-        pytest.fail("app did not start: " + "\n".join([*diagnostics, *logs, *db_logs]))
+    started, timeline, reason = wait_for_app(command, budget=900.0)
+    if not started:
+        console = summarize_console(console_log_text(target_name))
+        details = [
+            f"app did not start: {reason}",
+            f"serial console: {console['boots']} boot(s), {console['restarts']} restart(s), "
+            f"{console['health_monitor_stops']} health-monitor shutdown(s)",
+        ]
+        if console["health_monitor_stops"]:
+            details.append(
+                "The health monitor's 300-second window expired before the app was up, "
+                "so it rebooted the guest."
+            )
+        details.append("last status samples (full timeline: app-start-timeline.txt in the evidence):")
+        details.extend(f"  {line}" for line in timeline[-8:])
+        save_report_file(target_name, "app-start-timeline.txt", "\n".join(timeline) + "\n")
+        if "console lost" not in reason:
+            for label, query in (
+                ("units", "SYSTEMD_PAGER=cat systemctl status --no-pager -l emonos-app.service "
+                          "emonos-preload.service mnt-data.mount var-lib-docker.mount || true"),
+                ("preload+health journal", "journalctl --no-pager -o short-monotonic "
+                          "-u emonos-health -u emonos-preload -n 40 || true"),
+                ("app journal", "journalctl --no-pager -o short-monotonic -u emonos-app -n 30 || true"),
+                ("mariadb", "docker logs -t emonos-db-1 2>&1 | tail -40 || true"),
+            ):
+                try:
+                    details.append(f"--- {label}")
+                    details.extend(command.run_check(query, timeout=60))
+                except Exception as error:
+                    details.append(f"diagnostic unavailable: {type(error).__name__}")
+        pytest.fail("\n".join(details))
     command.run_check("test ! -e /mnt/data/preload/images.tar")
     command.run_check("test ! -e /mnt/data/preload/images.tar.sha256")
     services = command.run_check(
@@ -232,6 +255,12 @@ def test_feed_survives_reboot(command, target) -> None:
     assert command.poll_until_success(
         "systemctl is-active --quiet emonos-app.service",
         tries=90, timeout=360.0, sleepduration=4,
+    )
+    # The unit is active before the web container accepts connections. Wait for
+    # HTTP as test_app_stack does, or the first authenticated request races it.
+    assert command.poll_until_success(
+        "curl -fsS --max-time 10 http://127.0.0.1/ >/dev/null",
+        tries=30, timeout=90.0, sleepduration=3,
     )
     assert command.run_check(f"sha256sum {feed}") == [original]
     assert command.run_check("cat /etc/machine-id") == [machine_id]
