@@ -39,7 +39,10 @@ power_state() {
 set_power_state() {
     local desired=$1 current attempt
     case "$desired" in ON|OFF) ;; *) echo 'Expected ON or OFF' >&2; return 2 ;; esac
-    current=$(power_state)
+    if ! current=$(power_state); then
+        echo 'Unable to read Tasmota power state; refusing to toggle.' >&2
+        return 1
+    fi
     if [ "$current" = "$desired" ]; then
         echo "Tasmota single-channel power is already $desired"
         return 0
