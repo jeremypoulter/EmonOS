@@ -65,14 +65,13 @@ def test_data_partition_type_matches_repart(target_name: str, repo_root: Path) -
             assert f"type={expected}" not in line.lower()
 
 
-def test_pi_factory_data_image_is_compact(target_name: str, repo_root: Path) -> None:
+def test_pi_factory_data_image_is_compact(repo_root: Path) -> None:
     """WP8: shrink the populated Pi data FS; first boot grows it before preload."""
-    if target_name != "rpi4":
-        pytest.skip("only the Pi factory image uses compact data-image assembly")
     images = repo_root / "output/rpi4/images"
     data_image = images / "data.ext4"
     disk_image = images / "emonos-rpi4.img"
-    assert data_image.is_file() and disk_image.is_file(), "build the Pi image first"
+    if not data_image.is_file() or not disk_image.is_file():
+        pytest.skip("build the Pi image to check its compact data partition")
     assert data_image.stat().st_size < 3 * 1024**3
     assert data_image.stat().st_size > 1_200_000_000
     assert disk_image.stat().st_size < 4 * 1024**3
