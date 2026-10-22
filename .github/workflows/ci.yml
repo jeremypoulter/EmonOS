@@ -276,8 +276,18 @@ jobs:
           EMONOS_QEMU_RAUC_BUNDLE: ${{ github.workspace }}/output/x86-64-vm/images/emonos-x86-64-vm.raucb
           EMONOS_RUN_REBOOT_TEST: '1'
         run: |
+          report=output/test-results/x86-64-vm
+          mkdir -p "$report"
           # Flush the build's dirty pages so they do not compete with the guest's I/O.
           sync
+          # Record host CPU steal, I/O wait and pressure while the guest runs, so a
+          # slow first boot can be attributed to the runner rather than guessed at.
+          vmstat -t -w 5 > "$report/host-vmstat.txt" 2>&1 &
+          vmstat_pid=$!
+          { while sleep 5; do date -u +%T; cat /proc/pressure/cpu /proc/pressure/io; done; } \
+            > "$report/host-pressure.txt" 2>&1 &
+          pressure_pid=$!
+          trap 'kill "$vmstat_pid" "$pressure_pid" 2> /dev/null || true' EXIT
           tests/run.sh x86-64-vm -q
 
       - name: Summarize guest reboots

@@ -43,15 +43,29 @@ def summarize_console(text: str) -> dict:
     }
 
 
+def report_directory(target_name: str) -> Path:
+    """Directory CI collects as test evidence for this target."""
+    return Path(os.environ.get("EMONOS_TEST_REPORT_DIR") or (
+        Path(__file__).parents[1] / "output/test-results" / target_name
+    ))
+
+
 def console_log_text(target_name: str) -> str:
     """Best-effort read of the labgrid serial console log for this test run."""
-    root = os.environ.get("EMONOS_TEST_REPORT_DIR") or str(
-        Path(__file__).parents[1] / "output/test-results" / target_name
-    )
     try:
-        return (Path(root) / "labgrid/console_main").read_text(errors="replace")
+        return (report_directory(target_name) / "labgrid/console_main").read_text(errors="replace")
     except OSError:
         return ""
+
+
+def save_report_file(target_name: str, name: str, text: str) -> None:
+    """Best-effort write of extra evidence next to the JUnit report."""
+    try:
+        directory = report_directory(target_name)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / name).write_text(text, encoding="utf-8")
+    except OSError:
+        pass
 
 
 def wait_for_app(command, budget: float = 900.0, interval: float = 4.0):

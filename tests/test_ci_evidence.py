@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from common import console_log_text, summarize_console, wait_for_app
+from common import console_log_text, save_report_file, summarize_console, wait_for_app
 
 
 REBOOTED = (
@@ -64,3 +64,13 @@ def test_wait_for_app_gives_up_after_its_budget():
     command = make_command(["up=1 docker=active preload=active app=failed health=activating load=0"] * 100)
     started, timeline, reason = wait_for_app(command, budget=0.5, interval=0.01)
     assert not started and "not active after" in reason and timeline
+
+
+def test_save_report_file_writes_next_to_the_report_and_never_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMONOS_TEST_REPORT_DIR", str(tmp_path / "report"))
+    save_report_file("x86-64-vm", "timeline.txt", "a\nb\n")
+    assert (tmp_path / "report/timeline.txt").read_text() == "a\nb\n"
+    blocked = tmp_path / "blocked"
+    blocked.write_text("a file, not a directory")
+    monkeypatch.setenv("EMONOS_TEST_REPORT_DIR", str(blocked))
+    save_report_file("x86-64-vm", "timeline.txt", "ignored")

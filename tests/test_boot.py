@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from common import app_check_command, console_log_text, summarize_console, wait_for_app
+from common import (
+    app_check_command, console_log_text, save_report_file, summarize_console, wait_for_app,
+)
 
 
 REQUIRED_CGROUP_CONTROLLERS = {"cpu", "cpuset", "io", "memory", "pids"}
@@ -132,8 +134,9 @@ def test_app_stack(command, target_name: str) -> None:
                 "The health monitor's 300-second window expired before the app was up, "
                 "so it rebooted the guest."
             )
-        details.append("last status samples:")
+        details.append("last status samples (full timeline: app-start-timeline.txt in the evidence):")
         details.extend(f"  {line}" for line in timeline[-8:])
+        save_report_file(target_name, "app-start-timeline.txt", "\n".join(timeline) + "\n")
         if "console lost" not in reason:
             for label, query in (
                 ("units", "SYSTEMD_PAGER=cat systemctl status --no-pager -l emonos-app.service "
