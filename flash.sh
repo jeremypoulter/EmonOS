@@ -8,6 +8,9 @@ FLASH_DEVICE=${EMONOS_FLASH_DEVICE:-/dev/disk/by-id/usb-LinuxAut_sdFST_HS-SD_MMC
 FLASH_MODEL=${EMONOS_FLASH_MODEL:-sdFST_HS-SD_MMC}
 FLASH_SERIAL=${EMONOS_FLASH_SERIAL:-00048.01903}
 SD_WAIT_SECONDS=${EMONOS_SD_WAIT_SECONDS:-60}
+# Pi runtime layout needs the fixed A/B/boot partitions plus 6 GiB of data.
+# Keep this aligned with board/genimage partition sizes and the R5 minimum.
+MIN_CARD_BYTES=${EMONOS_MIN_CARD_BYTES:-7658835968}
 SDMUX_DEVICE=${EMONOS_SDMUX_DEVICE:-}
 SDMUX_SCSI_MODEL=${EMONOS_SDMUX_SCSI_MODEL:-sdFST HS-SD/MMC}
 SDMUX=${EMONOS_SDMUX:-$(command -v usbsdmux || printf '%s' "$HOME/Dev/usbsdmux/venv/bin/usbsdmux")}
@@ -22,6 +25,9 @@ if [ "$SD_WAIT_SECONDS" -lt 1 ]; then
     echo 'EMONOS_SD_WAIT_SECONDS must be greater than zero.' >&2
     exit 2
 fi
+case "$MIN_CARD_BYTES" in
+    ''|*[!0-9]*) echo 'EMONOS_MIN_CARD_BYTES must be a positive integer.' >&2; exit 2 ;;
+esac
 
 # Read and normalize the single-channel state from Tasmota's UI status fragment.
 power_state() {
@@ -117,7 +123,7 @@ resolve_sdmux_device() {
 
 # Revalidate the by-id target immediately before a destructive write.
 verify_flash_device() {
-    local mux_state properties model serial device_type device_bytes write_properties write_model write_serial
+    local mux_state properties model serial device_type device_bytes write_properties write_model write_serial required_bytes
     mux_state=$(sudo "$SDMUX" "$SDMUX_DEVICE" get) || return 1
     if [ "$mux_state" != host ]; then
         echo "SD mux changed to '$mux_state'; expected host before writing." >&2
@@ -153,15 +159,17 @@ verify_flash_device() {
     device_type=$(lsblk -dn -o TYPE "$FLASH_WRITE_DEVICE" | xargs)
     [ "$device_type" = disk ] || { echo "$FLASH_WRITE_DEVICE is not a whole disk." >&2; return 1; }
     device_bytes=$(sudo blockdev --getsize64 "$FLASH_WRITE_DEVICE") || return 1
-    [ "$device_bytes" -ge "$image_bytes" ] || {
-        echo "$FLASH_DEVICE is too small immediately before write." >&2
+    required_bytes=$image_bytes
+    [ "$required_bytes" -ge "$MIN_CARD_BYTES" ] || required_bytes=$MIN_CARD_BYTES
+    [ "$device_bytes" -ge "$required_bytes" ] || {
+        echo "$FLASH_DEVICE is too small: need at least $required_bytes bytes (image $image_bytes; runtime layout $MIN_CARD_BYTES)." >&2
         return 1
     }
 }
 
 # Wait through reader enumeration and the no-media state until capacity is usable.
 wait_for_sd_card() {
-    local deadline=$((SECONDS + SD_WAIT_SECONDS)) device_type device_bytes properties model serial
+    local deadline=$((SECONDS + SD_WAIT_SECONDS)) device_type device_bytes properties model serial required_bytes
     echo "Waiting up to ${SD_WAIT_SECONDS}s for $FLASH_MODEL (serial $FLASH_SERIAL) as $FLASH_DEVICE..."
     while [ "$SECONDS" -lt "$deadline" ]; do
         if [ -b "$FLASH_DEVICE" ]; then
@@ -190,8 +198,10 @@ wait_for_sd_card() {
                 sleep 0.5
                 continue
             fi
-            if [ "$device_bytes" -lt "$image_bytes" ]; then
-                echo "SD reader is present but media is not ready ($device_bytes bytes; waiting for $image_bytes)." >&2
+            required_bytes=$image_bytes
+            [ "$required_bytes" -ge "$MIN_CARD_BYTES" ] || required_bytes=$MIN_CARD_BYTES
+            if [ "$device_bytes" -lt "$required_bytes" ]; then
+                echo "SD reader is present but media is not ready ($device_bytes bytes; waiting for $required_bytes)." >&2
                 sleep 0.5
                 continue
             fi
