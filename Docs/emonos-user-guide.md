@@ -104,6 +104,12 @@ The image initializes both A/B payloads, with A bootable and B initially
 ineligible. The data partition grows to the installed card capacity on first
 boot. Allow several minutes for Docker and the application stack. Health
 checks and successful slot commits are recorded under `/mnt/data/health/`.
+Although the compact factory image is about 3.4 GiB, the runtime still needs
+at least a 6 GiB data filesystem; use an SD card of 8 GB or larger. `flash.sh`
+enforces the original full-layout-equivalent minimum media size as well as
+checking that the compact image fits. Override only if the system's minimum
+runtime partition layout has deliberately changed, with
+`EMONOS_MIN_CARD_BYTES`.
 
 ## 4. Console, status and SSH
 

@@ -30,7 +30,9 @@ make emonos_x86_64_vm
 The image is written to `output/x86-64-vm/images/emonos-x86-64-vm.img`.
 
 For the Pi, reuse the same signing credentials and run `make emonos_rpi4`.
-Its image is `output/rpi4/images/emonos-rpi4.img`.
+Its image is `output/rpi4/images/emonos-rpi4.img`. The Pi factory data image
+is ext4-shrunk after staging and grows to the card before first-boot preload;
+the installed data filesystem still needs at least 6 GiB.
 
 ## RAUC development bundles (WP5)
 
@@ -305,6 +307,8 @@ systemctl restart sshd
 
 Buildroot downloads and builds its own toolchain. The host needs standard build tools,
 Python 3, Docker, QEMU/KVM, and enough disk space for Buildroot output. The build embeds an
-approximately 1.2 GB Docker archive in a 6 GB data-partition image. Allow at least 20 GB
+approximately 1.2 GB Docker archive. X86's fixture reserves a 6 GiB data image; the Pi's
+factory image shrinks the populated ext4 filesystem and grows it to the installed
+card during first boot. The installed data filesystem still needs at least 6 GiB. Allow at least 20 GB
 of free build-output space per target during image assembly. See
 `Docs/emonos-poc-implementation-plan.md` for the full PoC scope and prerequisites.

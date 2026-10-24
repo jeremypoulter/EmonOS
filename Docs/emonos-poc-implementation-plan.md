@@ -399,7 +399,7 @@ blocked; each is reversible, and the ones worth your explicit sign-off are repea
 | D3 | Templating for `system.conf` / `manifest.raucm` | **`envsubst`**, not `tempio` | The reference uses a Go-template binary (`tempio`) because its templates have conditionals. Ours have two variants; `envsubst` plus one `if` in shell is less machinery. genimage already does `${VAR}` substitution natively |
 | D4 | Partition table | GPT, **hybrid MBR alias on Pi targets**, driven by `PARTITION_TABLE_TYPE` in board `meta` | F3 |
 | D5 | Partition count | **7** — add `emonos-bootstate` (8 MB); no overlay partition | F2 |
-| D6 | Slot sizes | **Fixed for the PoC: kernel 32 MiB, system 512 MiB** (measured at WP4 close, 2026-09-30) | Rootfs zstd squashfs measures ~104 MiB x86 and ~117 MiB Pi; Docker images/data are on the separate 6 GiB initial data filesystem. This retains ample growth room within each immutable slot. Revisit for a product release, not mid-PoC |
+| D6 | Slot sizes | **Fixed for the PoC: kernel 32 MiB, system 512 MiB** (measured at WP4 close, 2026-09-30) | Rootfs zstd squashfs measures ~104 MiB x86 and ~120 MiB Pi. Keep at least 6 GiB of data capacity at runtime for Docker/preload overlap. The x86 fixture uses 6 GiB; HAOS-style Pi factory ext4 compaction is documented in WP8. Revisit slot sizes for a product release |
 | D7 | Writable paths on a read-only root | **No overlay partition.** `/var` on tmpfs; `/etc` read-only; SSH host keys and everything else persistent explicitly on `/mnt/data`; `/var/lib/docker` bind-mounted from `/mnt/data/docker` | Keeps the PoC at 7 partitions and forces persistent state onto the data partition, which is DATA-1 anyway. The forcing function is deliberate (design doc §6.2). Cost: no persistent host OS settings — acceptable for a PoC, revisit for v1 |
 | D8 | `machine-id` | Persist it in the bootloader environment and pass `systemd.machine_id=` on the cmdline, with `systemd.condition-first-boot=true` when empty | Exactly what the reference does in both `grub.cfg` and `uboot-boot64.ush` [verified], ~20 lines, and it proves userspace can write the boot env — which RAUC needs regardless |
 | D9 | Shared boot partition update | **Freeze shared firmware, bootloader, boot configuration and `grubenv` during PoC updates.** RAUC bundles update only inactive kernel/rootfs slot pairs. Retain an install-hook prototype only as reference for the later OS-16 variant-fragment work. | Replacing shared boot assets is not independently atomic merely because selected files are preserved. A power failure in that replacement can break both slots. This PoC proves slot updates, not safe shared-bootloader updates; report OS-11 coverage as partial. |
@@ -652,7 +652,7 @@ php-mosquitto then passed through `emoncms_mqtt`, the Redis buffer and `feedwrit
 layout (`boot`, `kernel-a`, `system-a`, `kernel-b`, `system-b`, `bootstate`,
 `data`). Both system slots contain the same zstd squashfs; each kernel slot
 contains a gzip squashfs so U-Boot can read `/Image`. Fixed PoC slot sizes are
-32 MiB kernel, 512 MiB system and 6 GiB data. GPT is used on x86; the Pi's
+32 MiB kernel, 512 MiB system and an initially 6 GiB data filesystem. GPT is used on x86; the Pi's
 hybrid GPT/MBR aliases only its FAT boot partition into MBR (hybrid MBR has at
 most three entries). Slot A is seeded bootable in GRUB/U-Boot state; B is
 populated but not yet valid for trials. The x86 image has booted slot A and
@@ -1074,6 +1074,18 @@ immutable Pi image predates API-key-file fallback, so the key-aware test
 helper is fetched temporarily from the local server; subsequent Pi builds
 also support the protected `/mnt/data/health/test-api-key` file. No persistent
 database reset was necessary.
+
+**Pi raw image-size optimization (2026-10-18):** following HAOS' data-image
+process, the Pi build now fscks the populated ext4 data image, runs
+`resize2fs -M`, and truncates the image file to the minimum filesystem size.
+At first boot systemd-repart still expands the final data partition to the
+card, then growfs runs before Docker/preload mounts it. Thus the installed
+runtime keeps the 6 GiB minimum capacity; only the factory image stops shipping
+the unused blank tail. The ext4 image is about 2.20 GiB and the complete Pi
+image about 3.4 GiB; the x86 6 GiB fixture is unchanged. Host acceptance
+asserts that the compact partition contains the preloaded archive. Because this
+changes the Pi factory partition geometry, full on-device growth/preload
+verification still requires a fresh flash and remains open before release.
 
 1. `tests/run.sh <target>` selecting `tests/targets/<target>.yaml`; T2–T7 target-agnostic.
 2. JUnit output and `--lg-log`, so CI can consume it without changes (TEST-7 seed).

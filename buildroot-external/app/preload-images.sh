@@ -89,8 +89,11 @@ sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
 # at the pinned source epoch, including the generated Docker archive.
 find "$data_stage" -depth -print0 | xargs -0 -r touch -h -d "@$SOURCE_DATE_EPOCH"
 
-# WP4's data partition is deliberately a fixed initial size. It is the final
-# partition and emonos-first-boot will grow it to the device's remaining space.
+# The data partition is final and systemd-repart grows it before Docker starts.
+# Keep the x86 VM fixture at 6 GiB for its direct/snapshot development path.
+# On the Pi, mirror HAOS: create/populate the same staged tree, then shrink the
+# ext4 image to its minimum before genimage. A card-sized data filesystem is
+# recovered at first boot, after partition growth and before the preload unit.
 rm -f "$data_image"
 truncate -s 6G "$data_image"
 # The stage is owned by the build user. fakeroot makes the ext4 inode owners
@@ -104,3 +107,27 @@ E2FSPROGS_FAKE_TIME="$SOURCE_DATE_EPOCH" "$HOST_DIR/bin/fakeroot" -- sh -c '
         -E hash_seed=8b3f7261-7995-4eac-b12e-8e7356827661,lazy_itable_init=0,lazy_journal_init=0 \
         -d "$1" "$2"
 ' sh "$data_stage" "$data_image" "$HOST_DIR/sbin/mkfs.ext4"
+
+if [ "$platform" = linux/arm64 ]; then
+    # HAOS-style factory image compaction: all staged files are already in the
+    # ext4 filesystem, so check and shrink it before genimage embeds the final
+    # data partition. On the Pi, systemd-repart and growfs expand this last
+    # partition to the card during first boot, before Docker/preload mounts it.
+    E2FSPROGS_FAKE_TIME="$SOURCE_DATE_EPOCH" "$HOST_DIR/sbin/e2fsck" -f -y "$data_image"
+    E2FSPROGS_FAKE_TIME="$SOURCE_DATE_EPOCH" "$HOST_DIR/sbin/resize2fs" -M "$data_image"
+    block_count=$("$HOST_DIR/sbin/dumpe2fs" -h "$data_image" 2>/dev/null |
+        awk '/^Block count:/{print $3}')
+    block_size=$("$HOST_DIR/sbin/dumpe2fs" -h "$data_image" 2>/dev/null |
+        awk '/^Block size:/{print $3}')
+    test -n "$block_count" && test -n "$block_size"
+    data_bytes=$((block_count * block_size))
+    test "$data_bytes" -gt 0
+    test "$data_bytes" -lt $((3 * 1024 * 1024 * 1024)) || {
+        echo "Shrunk Pi data image is unexpectedly large: $data_bytes bytes" >&2
+        exit 1
+    }
+    check_time=$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y%m%d%H%M%S)
+    E2FSPROGS_FAKE_TIME="$SOURCE_DATE_EPOCH" \
+        "$HOST_DIR/sbin/tune2fs" -T "$check_time" "$data_image"
+    truncate -s "$data_bytes" "$data_image"
+fi

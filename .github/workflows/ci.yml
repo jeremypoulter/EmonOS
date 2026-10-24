@@ -188,7 +188,7 @@ jobs:
 
       - name: Test QEMU launcher on a clean runner
         if: matrix.test
-        run: python -m pytest -q tests/test_qemu_launcher.py tests/test_docker_archive.py tests/test_ota_scripts.py tests/test_health.py tests/test_preload.py tests/test_ci_evidence.py
+        run: python -m pytest -q tests/test_qemu_launcher.py tests/test_docker_archive.py tests/test_ota_scripts.py tests/test_flash_script.py tests/test_health.py tests/test_preload.py tests/test_ci_evidence.py
 
       - name: Create ephemeral PoC signing credentials
         run: make rauc_dev_keys

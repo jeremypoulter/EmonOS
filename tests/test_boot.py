@@ -65,6 +65,22 @@ def test_data_partition_type_matches_repart(target_name: str, repo_root: Path) -
             assert f"type={expected}" not in line.lower()
 
 
+def test_pi_factory_data_image_is_compact(repo_root: Path) -> None:
+    """WP8: shrink the populated Pi data FS; first boot grows it before preload."""
+    images = repo_root / "output/rpi4/images"
+    data_image = images / "data.ext4"
+    disk_image = images / "emonos-rpi4.img"
+    if not data_image.is_file() or not disk_image.is_file():
+        pytest.skip("build the Pi image to check its compact data partition")
+    assert data_image.stat().st_size < 3 * 1024**3
+    assert data_image.stat().st_size > 1_200_000_000
+    assert disk_image.stat().st_size < 4 * 1024**3
+    table = subprocess.check_output(["sfdisk", "-d", str(disk_image)], text=True)
+    data = next(line for line in table.splitlines() if ".img7 :" in line)
+    partition_bytes = int(data.split("size=")[1].split(",")[0].strip()) * 512
+    assert partition_bytes >= data_image.stat().st_size
+
+
 def test_pi_bootstate_environment_offset(target_name: str, repo_root: Path) -> None:
     """D8: Linux fw_setenv and U-Boot must use the same 16 KiB block."""
     if target_name != "rpi4":
@@ -222,7 +238,7 @@ def test_data_partition_growth(command, target_name: str) -> None:
         pytest.skip("set EMONOS_QEMU_DISK_SIZE=10G to test repart on a larger VM disk")
     device = "vda7" if target_name == "x86-64-vm" else "mmcblk0p7"
     partition_sectors = int(command.run_check(f"cat /sys/class/block/{device}/size")[0])
-    # A 6 GiB initial partition is 12,582,912 sectors; expect expansion.
+    # Expect the grown data partition to exceed the 6 GiB runtime minimum.
     assert partition_sectors > 12582912
     blocks = int(command.run_check("df -k /mnt/data | tail -1 | awk '{print $2}'")[0])
     assert blocks > 6 * 1024 * 1024
