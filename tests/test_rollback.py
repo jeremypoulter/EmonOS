@@ -99,6 +99,32 @@ def test_runtime_watchdog_is_active(command) -> None:
     command.run_check("systemctl show -p RuntimeWatchdogUSec | grep -q '30s'")
 
 
+@pytest.mark.timeout(500)
+def test_kernel_panic_falls_back_to_known_good_slot(command, target, target_name: str) -> None:
+    """OS-7: a pre-systemd kernel panic reboots and selects the healthy fallback."""
+    if target_name != "x86-64-vm":
+        pytest.skip("the disposable kernel-panic fault fixture currently uses GRUB/QEMU")
+
+    assert wait_for_commit(command)["slot"] == "A"
+    command.run_check(
+        "dd if=/dev/zero of=/dev/disk/by-partlabel/system-b bs=4096 count=1 conv=notrunc "
+        "&& sync && grub-editenv /mnt/boot/EFI/BOOT/grubenv set \"ORDER=B A\" B_OK=1 B_TRY=0"
+    )
+    command.console.sendline("systemctl reboot")
+    target.deactivate(command)
+    command.console.expect("Booting Slot B", timeout=120)
+    command.console.expect("Kernel panic - not syncing", timeout=60)
+    command.console.expect("Rebooting in 10 seconds", timeout=15)
+    command.console.expect("Booting Slot A", timeout=90)
+    command.console.expect("emonos login: ", timeout=180)
+    command.console.sendline("")
+    target.activate(command)
+
+    assert command.run_check("grep -q 'rauc.slot=A' /proc/cmdline") == []
+    assert command.run_check("cat /usr/lib/emonos/version") == ["0.1.0"]
+    assert wait_for_commit(command)["slot"] == "A"
+
+
 @pytest.mark.timeout(320)
 def test_stage_pi_health_bundle(command, target_name: str) -> None:
     """WP7 setup: stage a public bundle for a later separately gated install."""

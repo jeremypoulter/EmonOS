@@ -3,7 +3,6 @@ Description=Load EmonOS preloaded container images
 Requires=mnt-data.mount docker.service
 After=mnt-data.mount docker.service
 Before=emonos-app.service
-ConditionPathExists=!/mnt/data/.preload.done
 
 [Service]
 Type=oneshot

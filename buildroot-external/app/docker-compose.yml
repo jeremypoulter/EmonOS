@@ -4,6 +4,7 @@ services:
   web:
     image: emonos-preload/web:20260924
     pull_policy: never
+    restart: unless-stopped
     environment:
       MYSQL_HOST: db
       MYSQL_PORT: 3306
@@ -36,6 +37,8 @@ services:
   db:
     image: emonos-preload/db:20260924
     pull_policy: never
+    restart: unless-stopped
+    stop_grace_period: 90s
     environment:
       MYSQL_DATABASE: emoncms
       MYSQL_USER: emoncms
@@ -52,6 +55,7 @@ services:
   redis:
     image: emonos-preload/redis:20260924
     pull_policy: never
+    restart: unless-stopped
     volumes: ["/mnt/data/redis:/data"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -62,4 +66,5 @@ services:
   mqtt:
     image: emonos-preload/mqtt:20260924
     pull_policy: never
+    restart: unless-stopped
     command: ["/bin/sh", "-c", "touch /mosquitto/config/passwd && mosquitto_passwd -b /mosquitto/config/passwd emonpi emonpimqtt2016 && exec mosquitto"]

@@ -7,6 +7,16 @@ checksum="$preload/images.tar.sha256"
 done=/mnt/data/.preload.done
 
 mkdir -p "$(dirname "$done")"
+
+# A prior run may have committed the completion marker and lost power before
+# deleting its recovery archive. The marker is written only after docker load
+# and sync, so the images are durable; clean up the stale archive and succeed.
+if test -e "$done"; then
+    rm -f "$archive" "$checksum" "$done.tmp"
+    sync
+    exit 0
+fi
+
 test -f "$archive"
 test -f "$checksum"
 expected=$(cat "$checksum")
@@ -45,5 +55,15 @@ if test "$actual" != "$expected"; then
     echo "emonos-preload: archive checksum mismatch (expected $expected, got $actual)" >&2
     exit 1
 fi
+
+# Persist Docker's successful import before publishing the completion marker.
+# Write the marker in the same directory and rename it atomically: after any
+# interruption, either the archive is available for a safe retry or the marker
+# proves the imported images were committed. Never delete recovery input first.
+sync
+printf '%s\n' "$actual" > "$done.tmp"
+sync
+mv "$done.tmp" "$done"
+sync
 rm -f "$archive" "$checksum"
-touch "$done"
+sync

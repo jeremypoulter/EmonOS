@@ -1,6 +1,7 @@
 """Boot and common runtime coverage for HW-3 and TEST-7."""
 
 import base64
+import json
 import os
 import subprocess
 import zlib
@@ -183,6 +184,33 @@ def test_app_stack(command, target_name: str) -> None:
 
     # This script runs in the guest, avoiding host-side HTTP/DNS assumptions.
     command.run_check(app_check_command(), timeout=120)
+
+
+@pytest.mark.timeout(1200)
+def test_container_crash_restarts_web(command) -> None:
+    """T2, HC-1: a web-container crash is restarted and its logs are bounded."""
+    started, _, reason = wait_for_app(command)
+    assert started, reason
+    policy = command.run_check(
+        "docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' emonos-web-1"
+    )
+    assert policy == ["unless-stopped"]
+    log_config = json.loads(command.run_check(
+        "docker inspect -f '{{json .HostConfig.LogConfig}}' emonos-web-1"
+    )[0])
+    assert log_config["Config"] == {"max-file": "3", "max-size": "10m"}
+
+    # `docker kill` is an intentional operator stop and suppresses Docker's
+    # restart policy. Kill the actual container process to model a crash.
+    command.run_check(
+        "kill -KILL \"$(docker inspect -f '{{.State.Pid}}' emonos-web-1)\""
+    )
+    recovered = command.poll_until_success(
+        "test \"$(docker inspect -f '{{.RestartCount}}' emonos-web-1)\" -ge 1 "
+        "&& curl -fsS --max-time 5 http://127.0.0.1/ >/dev/null",
+        tries=40, timeout=150.0, sleepduration=3,
+    )
+    assert recovered, command.run_check("docker inspect emonos-web-1")
 
 
 @pytest.mark.timeout(600)

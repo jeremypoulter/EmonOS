@@ -15,7 +15,7 @@ REQUIRED_TOOLS = ("mkfifo", "tee", "sha256sum", "awk", "mktemp")
 
 
 def run_preload(tmp_path, archive: bytes, checksum: str, docker_exit: int = 0,
-                unreadable: bool = False):
+                unreadable: bool = False, interrupt_after_load: bool = False):
     missing = [tool for tool in REQUIRED_TOOLS if not shutil.which(tool)]
     if missing:
         pytest.skip(f"host lacks {', '.join(missing)}")
@@ -33,6 +33,10 @@ def run_preload(tmp_path, archive: bytes, checksum: str, docker_exit: int = 0,
     docker.write_text(f'#!/bin/sh\ncat > "{received}"\nexit {docker_exit}\n')
     docker.chmod(0o755)
     text = SCRIPT.read_text().replace("/mnt/data", str(data)).replace("/run/", f"{tmp_path}/run/")
+    if interrupt_after_load:
+        wait = 'wait "$hasher" || hash_status=$?'
+        assert wait in text
+        text = text.replace(wait, wait + '\nkill -KILL $$', 1)
     script = tmp_path / "preload"
     script.write_text(text)
     script.chmod(0o755)
@@ -70,6 +74,55 @@ def test_load_failure_is_not_marked_done(tmp_path):
     assert result.returncode != 0
     assert not (data / ".preload.done").exists()
     assert (data / "preload/images.tar").exists()
+
+
+def test_interruption_after_load_preserves_archive_and_retry_completes(tmp_path):
+    archive = os.urandom(100_000)
+    checksum = hashlib.sha256(archive).hexdigest()
+    result, data, received = run_preload(
+        tmp_path, archive, checksum, interrupt_after_load=True,
+    )
+    assert result.returncode == -9
+    assert received.read_bytes() == archive
+    assert not (data / ".preload.done").exists()
+    assert (data / "preload/images.tar").read_bytes() == archive
+
+    script = tmp_path / "preload"
+    script.write_text(SCRIPT.read_text().replace("/mnt/data", str(data)).replace(
+        "/run/", f"{tmp_path}/run/",
+    ))
+    script.chmod(0o755)
+    result = subprocess.run(
+        [str(script)], capture_output=True, text=True, timeout=15,
+        env={**os.environ, "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert (data / ".preload.done").read_text().strip() == checksum
+    assert not (data / "preload/images.tar").exists()
+
+
+def test_committed_preload_cleans_archive_left_by_interruption(tmp_path):
+    archive = os.urandom(10_000)
+    checksum = hashlib.sha256(archive).hexdigest()
+    result, data, _ = run_preload(tmp_path, archive, checksum)
+    assert result.returncode == 0, result.stderr
+
+    # Model power loss after the durable marker rename but before archive
+    # deletion: the unit must run, trust the marker, and reclaim the archive.
+    (data / "preload/images.tar").write_bytes(archive)
+    (data / "preload/images.tar.sha256").write_text(checksum + "\n")
+    script = tmp_path / "preload"
+    script.write_text(SCRIPT.read_text().replace("/mnt/data", str(data)).replace(
+        "/run/", f"{tmp_path}/run/",
+    ))
+    script.chmod(0o755)
+    result = subprocess.run(
+        [str(script)], capture_output=True, text=True, timeout=15,
+        env={**os.environ, "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (data / "preload/images.tar").exists()
+    assert not (data / "preload/images.tar.sha256").exists()
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")

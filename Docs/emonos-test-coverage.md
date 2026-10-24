@@ -6,7 +6,7 @@ Tags on helper functions are intentionally excluded: every listed case is collec
 | Acceptance | Proves | Collected pytest cases |
 |---|---|---|
 | **T1** (HW-3) | Build both targets from the shared tree | `test_boot.py::test_target_image_is_present`, `test_boot.py::test_targets_use_common_runtime` |
-| **T2** (ARCH-4) | Boot and serve emoncms | `test_boot.py::test_ab_layout`, `test_boot.py::test_app_stack`, `test_boot.py::test_boot_runtime` |
+| **T2** (ARCH-4) | Boot and serve emoncms | `test_boot.py::test_ab_layout`, `test_boot.py::test_app_stack`, `test_boot.py::test_boot_runtime`, `test_boot.py::test_container_crash_restarts_web` |
 | **T3** (DATA-2) | Feed survives reboot | `test_boot.py::test_feed_survives_reboot` |
 | **T4** (OS-1, OS-2) | RAUC slot reporting and signed bundle verification | `test_rauc.py::test_rauc_bundle_on_target`, `test_rauc.py::test_rauc_bundle_payloads`, `test_rauc.py::test_rauc_rejects_untrusted_signer`, `test_rauc.py::test_rauc_status` |
 | **T5** (OS-11, OS-13, OS-15) | Install v2, boot B, retain data | `test_rauc.py::test_stage_pi_update_bundle`, `test_rauc.py::test_update_round_trip`, `test_rollback.py::test_healthy_update_commits_and_reboots` |
@@ -18,5 +18,6 @@ Tags on helper functions are intentionally excluded: every listed case is collec
 
 | ID | Collected pytest cases |
 |---|---|
-| `HC-1` | `test_boot.py::test_app_stack`, `test_rollback.py::test_health_commits_factory_slot`, `test_rollback.py::test_healthy_update_commits_and_reboots` |
+| `HC-1` | `test_boot.py::test_app_stack`, `test_boot.py::test_container_crash_restarts_web`, `test_rollback.py::test_health_commits_factory_slot`, `test_rollback.py::test_healthy_update_commits_and_reboots` |
 | `OS-10` | `test_rollback.py::test_runtime_watchdog_is_active` |
+| `OS-7` | `test_rollback.py::test_kernel_panic_falls_back_to_known_good_slot` |

@@ -29,7 +29,7 @@ for BOOT_SLOT in ${BOOT_ORDER}; do
             fi
             if sqfsload mmc ${devnum}:2 ${kernel_addr_r} /Image; then
                 echo Booting Slot A
-                setenv bootargs "${bootargs_rpi} root=PARTUUID=8d3d53e3-6d49-4c38-8349-aff6859e82fd rootfstype=squashfs rootwait ro 8250.nr_uarts=1 console=ttyS0,115200 rauc.slot=A systemd.machine_id=${MACHINE_ID} ${boot_condition}"
+                setenv bootargs "${bootargs_rpi} root=PARTUUID=8d3d53e3-6d49-4c38-8349-aff6859e82fd rootfstype=squashfs rootwait=30 ro 8250.nr_uarts=1 console=ttyS0,115200 rauc.slot=A systemd.machine_id=${MACHINE_ID} ${boot_condition}"
             fi
         fi
         if test "${BOOT_SLOT}" = B && test ${BOOT_B_LEFT} -gt 0; then
@@ -38,7 +38,7 @@ for BOOT_SLOT in ${BOOT_ORDER}; do
             fi
             if sqfsload mmc ${devnum}:4 ${kernel_addr_r} /Image; then
                 echo Booting Slot B
-                setenv bootargs "${bootargs_rpi} root=PARTUUID=a3ec664e-32ce-4665-95ea-7ae90ce9aa20 rootfstype=squashfs rootwait ro 8250.nr_uarts=1 console=ttyS0,115200 rauc.slot=B systemd.machine_id=${MACHINE_ID} ${boot_condition}"
+                setenv bootargs "${bootargs_rpi} root=PARTUUID=a3ec664e-32ce-4665-95ea-7ae90ce9aa20 rootfstype=squashfs rootwait=30 ro 8250.nr_uarts=1 console=ttyS0,115200 rauc.slot=B systemd.machine_id=${MACHINE_ID} ${boot_condition}"
             fi
         fi
     fi

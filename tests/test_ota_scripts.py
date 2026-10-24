@@ -21,6 +21,16 @@ def test_grub_embeds_slot_selection_commands():
     assert 'echo "Booting Slot B"' in grub
 
 
+def test_early_kernel_failure_reboots_and_root_wait_is_bounded():
+    external = OTA.parent
+    kernel_policy = (external / "board/common/kernel-rauc.config").read_text()
+    assert "CONFIG_PANIC_TIMEOUT=10" in kernel_policy
+    assert "rootwait=30" in (external / "board/pc/x86-64-vm/grub.cfg.in").read_text()
+    pi_boot = (external / "board/raspberrypi/rpi4/boot.cmd").read_text()
+    assert pi_boot.count("rootwait=30") == 2
+    assert "rootwait ro" not in pi_boot
+
+
 @pytest.mark.parametrize("architecture,board,backend", [
     ("x86_64", "x86-64-vm", "grub"), ("aarch64", "rpi4", "uboot"),
 ])
