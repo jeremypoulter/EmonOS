@@ -307,8 +307,8 @@ systemctl restart sshd
 
 Buildroot downloads and builds its own toolchain. The host needs standard build tools,
 Python 3, Docker, QEMU/KVM, and enough disk space for Buildroot output. The build embeds an
-approximately 1.2 GB Docker archive. X86's fixture reserves a 6 GB data image; the Pi's
+approximately 1.2 GB Docker archive. X86's fixture reserves a 6 GiB data image; the Pi's
 factory image shrinks the populated ext4 filesystem and grows it to the installed
-card during first boot. The installed data filesystem still needs at least 6 GB. Allow at least 20 GB
+card during first boot. The installed data filesystem still needs at least 6 GiB. Allow at least 20 GB
 of free build-output space per target during image assembly. See
 `Docs/emonos-poc-implementation-plan.md` for the full PoC scope and prerequisites.

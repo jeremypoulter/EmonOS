@@ -10,7 +10,7 @@ FLASH_SERIAL=${EMONOS_FLASH_SERIAL:-00048.01903}
 SD_WAIT_SECONDS=${EMONOS_SD_WAIT_SECONDS:-60}
 # Pi runtime layout needs the fixed A/B/boot partitions plus 6 GiB of data.
 # Keep this aligned with board/genimage partition sizes and the R5 minimum.
-MIN_CARD_BYTES=${EMONOS_MIN_CARD_BYTES:-7658835968}
+MIN_CARD_BYTES=${EMONOS_MIN_CARD_BYTES-7658835968}
 SDMUX_DEVICE=${EMONOS_SDMUX_DEVICE:-}
 SDMUX_SCSI_MODEL=${EMONOS_SDMUX_SCSI_MODEL:-sdFST HS-SD/MMC}
 SDMUX=${EMONOS_SDMUX:-$(command -v usbsdmux || printf '%s' "$HOME/Dev/usbsdmux/venv/bin/usbsdmux")}
@@ -28,6 +28,34 @@ fi
 case "$MIN_CARD_BYTES" in
     ''|*[!0-9]*) echo 'EMONOS_MIN_CARD_BYTES must be a positive integer.' >&2; exit 2 ;;
 esac
+# Strip leading zeroes before any arithmetic comparison, then bound the value
+# to Bash's signed 64-bit integer range so oversized input cannot wrap.
+MIN_CARD_BYTES=${MIN_CARD_BYTES#"${MIN_CARD_BYTES%%[!0]*}"}
+if [ -z "$MIN_CARD_BYTES" ]; then
+    echo 'EMONOS_MIN_CARD_BYTES must be greater than zero.' >&2
+    exit 2
+fi
+MAX_BASH_INTEGER=9223372036854775807
+integer_too_large=0
+if [ "${#MIN_CARD_BYTES}" -gt "${#MAX_BASH_INTEGER}" ]; then
+    integer_too_large=1
+elif [ "${#MIN_CARD_BYTES}" -eq "${#MAX_BASH_INTEGER}" ]; then
+    for ((index = 0; index < ${#MAX_BASH_INTEGER}; index++)); do
+        digit=${MIN_CARD_BYTES:index:1}
+        max_digit=${MAX_BASH_INTEGER:index:1}
+        if [ "$digit" -gt "$max_digit" ]; then
+            integer_too_large=1
+            break
+        fi
+        if [ "$digit" -lt "$max_digit" ]; then
+            break
+        fi
+    done
+fi
+if [ "$integer_too_large" -eq 1 ]; then
+    echo 'EMONOS_MIN_CARD_BYTES exceeds Bash integer range.' >&2
+    exit 2
+fi
 
 # Read and normalize the single-channel state from Tasmota's UI status fragment.
 power_state() {
