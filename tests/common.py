@@ -7,6 +7,12 @@ import time
 from pathlib import Path
 
 
+TARGET_COMPATIBLE = {
+    "x86-64-vm": "emonos-x86-64-vm",
+    "rpi4": "emonos-rpi4-bootstate-v2",
+}
+
+
 def app_check_command() -> str:
     if base := os.environ.get("EMONOS_APP_TEST_API_URL"):
         script_url = shlex.quote(f"{base.rstrip('/')}/app-check-with-key.sh")

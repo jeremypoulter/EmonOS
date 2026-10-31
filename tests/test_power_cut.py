@@ -6,13 +6,12 @@ import os
 import shlex
 import subprocess
 import time
-import urllib.parse
 from pathlib import Path
 
 import pytest
 
 from power_cut import (complete_guest_triggered_power_cut, cut_qemu_power,
-                       power1_state, restore_qemu_power)
+                       pi_power_state, restore_qemu_power)
 from test_rauc import active_slot_hashes, target_file_hash, target_rauc_json
 from test_rollback import assert_preserved, wait_for_commit
 from common import app_check_command
@@ -189,23 +188,21 @@ def run_interrupted_pi_install(command, target, target_name: str) -> None:
     manifest = target_rauc_json(command, f"info --output-format=json {target_bundle}")
     assert manifest["version"] == "0.2.0"
     new_root = next(entry["rootfs"]["checksum"] for entry in manifest["images"] if "rootfs" in entry)
-    assert power1_state() == ("ON", "ON"), "Power1 and Power5 must be on before install"
+    assert pi_power_state() == "ON", "single-channel Pi Power1 relay must be ON before install"
     command.run_check("sync")
     # Progress is global across kernel and rootfs images. rootfs.1 starts near
     # 73%, so target an early 75--85% rootfs write, not 5--15% overall.
     progress_pattern = r"^ (7[5-9]|8[0-5])% Copying image to rootfs.1$"
-    power_command = urllib.parse.quote("Power1 OFF")
     watcher_path = "/mnt/data/t7-power-watch.sh"
     watcher_script = (
         "#!/bin/sh\nset -eu\n"
         f"while ! grep -qE {shlex.quote(progress_pattern)} {state_file}; do sleep 0.1; done\n"
         f"line=$(grep -E {shlex.quote(progress_pattern)} {state_file} | tail -1)\n"
         "printf 'T7_POWER_CUT_STAGE:%s\\n' \"$line\" >/dev/ttyS0\n"
-        f"curl -fsS --max-time 3 'http://172.16.1.2/cm?cmnd={power_command}' "
-        ">/mnt/data/t7-power-command.json\nsync\n"
+        "sync\n"
     )
     command.run_check(
-        f": >{state_file}; rm -f /mnt/data/t7-power-command.json; "
+        f": >{state_file}; "
         f"printf %s {shlex.quote(watcher_script)} >{watcher_path}; chmod 700 {watcher_path}; "
         "systemd-run --unit=emonos-t7-power-watch --collect --no-block /bin/sh "
         f"{watcher_path}; rauc install {target_bundle} >{state_file} 2>&1 &",

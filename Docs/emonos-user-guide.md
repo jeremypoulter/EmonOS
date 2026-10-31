@@ -40,6 +40,13 @@ bundle. The Pi build is a real aarch64 cross-build, not a QEMU-user build.
 The bundle contains only the padded kernel and system-slot images; it does
 not change the shared boot files, U-Boot/GRUB firmware, bootstate or data.
 
+The Pi factory image now initializes two redundant U-Boot environment copies.
+Its RAUC compatibility ID is `emonos-rpi4-bootstate-v2`; older single-copy Pi
+images intentionally reject bundles built for this format. Back up the card
+and factory-reflash an older Pi image before using these bundles. The reflash
+erases its data partition; RAUC updates continue to preserve both shared boot
+files and bootstate.
+
 Default artifacts:
 
 | Target | Disk image | Signed bundle |
@@ -292,14 +299,17 @@ restarts the same raw test disk and firmware state. It writes a fresh sparse
 raw test copy under `output/test-state/`; the factory image is not modified.
 See [the T7 instructions](../README.md#interrupted-install-vm-test-t7).
 
-The Pi test deliberately turns **Tasmota Power1 OFF** for five seconds after
-the guest watcher observes 75–85% global RAUC progress while copying
-`rootfs.1`. Before running it, verify that Power1 powers **only this Pi** and
-is ON. The test checks Power5 is ON and unchanged, cuts/restores Power1, then
+The Pi test deliberately cuts **Power1** for five seconds after the guest
+watcher observes 75–85% global RAUC progress while copying `rootfs.1`. Before
+running it, verify that the single-channel relay powers **only this Pi** and is
+ON. The test uses `flash.sh off/on`, which reads the relay state before each
+toggle and verifies the restored state. Set `EMONOS_TASMOTA_URL` if the relay's
+web UI is not at the default `http://172.16.0.137`. The test cuts/restores Pi
+power, then
 expects the previous active A slot to boot with persistent data intact. It
 does not reflash or reset bootstate. The tested bench Tasmota endpoint is
-`http://172.16.1.2`; the script controls Power1 only. Do not run the test if
-the outlet mapping differs or another device shares Power1.
+`http://172.16.0.137`. Do not run the test if the outlet mapping differs or
+another device shares the relay.
 
 Both T7 tests are gated by `EMONOS_RUN_POWER_CUT_TEST=1`. Keep the resulting
 `cut-evidence.json`; it records the cut phase, changed inactive-slot hash,

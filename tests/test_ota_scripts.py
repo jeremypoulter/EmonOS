@@ -27,14 +27,37 @@ def test_early_kernel_failure_reboots_and_root_wait_is_bounded():
     assert "CONFIG_PANIC_TIMEOUT=10" in kernel_policy
     assert "rootwait=30" in (external / "board/pc/x86-64-vm/grub.cfg.in").read_text()
     pi_boot = (external / "board/raspberrypi/rpi4/boot.cmd").read_text()
-    assert pi_boot.count("rootwait=30") == 2
+    assert pi_boot.count("rootwait=30") == 4
     assert "rootwait ro" not in pi_boot
 
 
-@pytest.mark.parametrize("architecture,board,backend", [
-    ("x86_64", "x86-64-vm", "grub"), ("aarch64", "rpi4", "uboot"),
+def test_pi_bootstate_is_redundant_and_uses_fixed_partition_offsets():
+    external = OTA.parent
+    uboot = (external / "board/raspberrypi/rpi4/uboot-squashfs.config").read_text()
+    assert "CONFIG_ENV_IS_IN_MMC=y" in uboot
+    assert "CONFIG_ENV_REDUNDANT=y" in uboot
+    assert "CONFIG_ENV_APPEND=y" in uboot
+    assert "CONFIG_ENV_MMC_DEVICE_INDEX=0" in uboot
+    assert "CONFIG_ENV_OFFSET=0x48004400" in uboot
+    assert "CONFIG_ENV_OFFSET_REDUND=0x48008400" in uboot
+    assert "CONFIG_ENV_SIZE=0x4000" in uboot
+    assert "CONFIG_CMD_SAVEENV=y" in uboot
+
+    fw_env = (external / "board/raspberrypi/rpi4/rootfs-overlay/etc/fw_env.config")
+    assert fw_env.read_text().splitlines() == [
+        "/dev/disk/by-partlabel/bootstate 0x0000 0x4000 0x200",
+        "/dev/disk/by-partlabel/bootstate 0x4000 0x4000 0x200",
+    ]
+    boot = (external / "board/raspberrypi/rpi4/boot.cmd").read_text()
+    assert boot.count("if env save; then") == 2
+    assert "mmc read" not in boot and "mmc write" not in boot
+
+
+@pytest.mark.parametrize("architecture,board,backend,compatible", [
+    ("x86_64", "x86-64-vm", "grub", "emonos-x86-64-vm"),
+    ("aarch64", "rpi4", "uboot", "emonos-rpi4-bootstate-v2"),
 ])
-def test_target_config_and_public_only_keyring(tmp_path, architecture, board, backend):
+def test_target_config_and_public_only_keyring(tmp_path, architecture, board, backend, compatible):
     target = tmp_path / "target"
     (target / "etc").mkdir(parents=True)
     keys = tmp_path / "keys"
@@ -49,7 +72,7 @@ def test_target_config_and_public_only_keyring(tmp_path, architecture, board, ba
     }
     subprocess.run([str(OTA / "prepare-target.sh"), str(target)], env=environment, check=True)
     content = (target / "etc/rauc/system.conf").read_text()
-    assert f"compatible=emonos-{board}" in content
+    assert f"compatible={compatible}" in content
     assert f"bootloader={backend}" in content
     assert "@" not in content
     assert "readonly=true" in content
@@ -92,7 +115,8 @@ def test_slot_local_fault_does_not_survive_next_normal_build(tmp_path):
 
 
 @pytest.mark.parametrize("system,bundle,expected", [
-    ("emonos-rpi4", "emonos-rpi4", 0),
+    ("emonos-rpi4-bootstate-v2", "emonos-rpi4-bootstate-v2", 0),
+    ("emonos-rpi4", "emonos-rpi4-bootstate-v2", 10),
     ("emonos-rpi4", "emonos-x86-64-vm", 10),
     ("", "", 10),
 ])

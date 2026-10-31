@@ -10,7 +10,8 @@ from pathlib import Path
 import pytest
 
 from common import (
-    app_check_command, console_log_text, save_report_file, summarize_console, wait_for_app,
+    TARGET_COMPATIBLE, app_check_command, console_log_text, save_report_file,
+    summarize_console, wait_for_app,
 )
 
 
@@ -83,20 +84,37 @@ def test_pi_factory_data_image_is_compact(repo_root: Path) -> None:
 
 
 def test_pi_bootstate_environment_offset(target_name: str, repo_root: Path) -> None:
-    """D8: Linux fw_setenv and U-Boot must use the same 16 KiB block."""
+    """D8: Linux fw_setenv and U-Boot share both redundant 16 KiB copies."""
     if target_name != "rpi4":
         pytest.skip("only the Pi uses the raw U-Boot environment")
     config = repo_root / "buildroot-external/board/raspberrypi/rpi4/rootfs-overlay/etc/fw_env.config"
-    assert " 0x0000 0x4000 " in config.read_text()
+    assert config.read_text().splitlines() == [
+        "/dev/disk/by-partlabel/bootstate 0x0000 0x4000 0x200",
+        "/dev/disk/by-partlabel/bootstate 0x4000 0x4000 0x200",
+    ]
     image = repo_root / "output/rpi4/images/bootstate.img"
     if not image.is_file():
         pytest.skip("build the Pi image first")
     with image.open("rb") as bootstate:
-        environment = bootstate.read(0x4000)
-        assert bootstate.read(0x4000) == bytes(0x4000)
-    expected_crc = int.from_bytes(environment[:4], "little")
-    assert zlib.crc32(environment[4:]) == expected_crc
-    assert b"BOOT_ORDER=A B" in environment
+        copies = [bootstate.read(0x4000), bootstate.read(0x4000)]
+    assert copies[0] == copies[1]
+    for environment in copies:
+        expected_crc = int.from_bytes(environment[:4], "little")
+        assert zlib.crc32(environment[5:]) == expected_crc
+        assert environment[4] == 1
+        assert b"BOOT_ORDER=A B" in environment
+
+    disk_image = repo_root / "output/rpi4/images/emonos-rpi4.img"
+    table = json.loads(subprocess.check_output(
+        ["sfdisk", "--json", str(disk_image)], text=True,
+    ))["partitiontable"]
+    bootstate_partition = next(
+        entry for entry in table["partitions"] if entry.get("name") == "bootstate"
+    )
+    absolute_offset = bootstate_partition["start"] * table["sectorsize"]
+    uboot_config = (repo_root / "buildroot-external/board/raspberrypi/rpi4/uboot-squashfs.config").read_text()
+    assert f"CONFIG_ENV_OFFSET=0x{absolute_offset:08x}" in uboot_config
+    assert f"CONFIG_ENV_OFFSET_REDUND=0x{absolute_offset + 0x4000:08x}" in uboot_config
 
 
 def test_targets_use_common_runtime(repo_root: Path) -> None:

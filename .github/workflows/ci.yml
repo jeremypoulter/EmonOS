@@ -215,6 +215,10 @@ jobs:
           printf 'initial=%s\nrebuilt=%s\n' "$before" "$after" > image-reproducibility.txt
           test "$before" = "$after"
 
+      - name: Validate Pi redundant boot-state image and bundle
+        if: matrix.target == 'rpi4'
+        run: python3 tests/check_rpi4_image.py
+
       - name: Record ccache statistics
         if: ${{ !cancelled() }}
         env:
@@ -308,6 +312,67 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Build x86 A/B update fixtures
+        if: matrix.test
+        env:
+          EMONOS_CCACHE_MAXSIZE: 2G
+        run: |
+          mkdir -p output/wp7
+          cp --reflink=auto --sparse=always \
+            output/x86-64-vm/images/emonos-x86-64-vm.img output/wp7/x86-v1.img
+          cp output/x86-64-vm/images/emonos-x86-64-vm.raucb output/wp7/x86-v1.raucb
+          cp output/x86-64-vm/images/emonos-x86-64-vm.raucb.sha256 output/wp7/x86-v1.raucb.sha256
+          ci/builder/run.sh emonos-builder:ci \
+            "$CACHE_ROOT/dl" "$CACHE_ROOT/ccache/x86-64-vm" \
+            env EMONOS_VERSION=0.2.0 EMONOS_APP_FAULT=none make emonos_x86_64_vm
+          cp output/x86-64-vm/images/emonos-x86-64-vm.raucb output/wp7/x86-v2.raucb
+          ci/builder/run.sh emonos-builder:ci \
+            "$CACHE_ROOT/dl" "$CACHE_ROOT/ccache/x86-64-vm" \
+            env EMONOS_VERSION=0.2.0-broken EMONOS_APP_FAULT=fail-start make emonos_x86_64_vm
+          cp output/x86-64-vm/images/emonos-x86-64-vm.raucb output/wp7/x86-v2-broken.raucb
+
+      - name: Test healthy update, autonomous rollback and interrupted install
+        if: matrix.test
+        env:
+          EMONOS_QEMU_BASE_DISK: ${{ github.workspace }}/output/wp7/x86-v1.img
+          EMONOS_QEMU_CPU: ${{ steps.kvm.outputs.accel == 'kvm' && 'host' || 'max' }}
+          EMONOS_QEMU_EXTRA_ARGS: ${{ steps.kvm.outputs.accel == 'kvm' && '-accel kvm -smp 4' || '-accel tcg,thread=multi -smp 4' }}
+          EMONOS_QEMU_DISABLE_IO_URING: '1'
+          EMONOS_QEMU_MIN_AVAILABLE_MB: '4096'
+        run: |
+          healthy="$GITHUB_WORKSPACE/output/wp7/x86-v2.raucb"
+          broken="$GITHUB_WORKSPACE/output/wp7/x86-v2-broken.raucb"
+          EMONOS_QEMU_RAUC_BUNDLE="$healthy" \
+          EMONOS_WP7_BUNDLE_HOST="$healthy" \
+          EMONOS_RUN_COMMIT_TEST=1 \
+          EMONOS_TEST_REPORT_DIR=output/test-results/x86-64-vm/wp7-commit \
+            tests/run.sh x86-64-vm -q -k healthy_update_commits_and_reboots
+          EMONOS_QEMU_RAUC_BUNDLE="$broken" \
+          EMONOS_WP7_BUNDLE_HOST="$broken" \
+          EMONOS_RUN_ROLLBACK_TEST=1 \
+          EMONOS_TEST_REPORT_DIR=output/test-results/x86-64-vm/wp7-rollback \
+            tests/run.sh x86-64-vm -q -k broken_update_rolls_back_autonomously
+          EMONOS_QEMU_RAUC_BUNDLE="$healthy" \
+          EMONOS_WP7_BUNDLE_HOST="$healthy" \
+          EMONOS_RUN_POWER_CUT_TEST=1 \
+          EMONOS_TEST_REPORT_DIR=output/test-results/x86-64-vm/wp7-power-cut \
+            tests/run.sh x86-64-vm -q -k interrupted_install_keeps_active_slot
+
+      - name: Restore factory x86 artifacts for build evidence
+        if: ${{ always() && matrix.test }}
+        run: |
+          if test -f output/wp7/x86-v1.img; then
+            cp --reflink=auto --sparse=always output/wp7/x86-v1.img \
+              output/x86-64-vm/images/emonos-x86-64-vm.img
+          fi
+          if test -f output/wp7/x86-v1.raucb; then
+            cp output/wp7/x86-v1.raucb output/x86-64-vm/images/emonos-x86-64-vm.raucb
+          fi
+          if test -f output/wp7/x86-v1.raucb.sha256; then
+            cp output/wp7/x86-v1.raucb.sha256 \
+              output/x86-64-vm/images/emonos-x86-64-vm.raucb.sha256
+          fi
+
       - name: Record build evidence
         if: always()
         run: |
@@ -326,6 +391,13 @@ jobs:
           if test -d 'output/test-results/${{ matrix.target }}'; then
             mkdir -p ci-artifacts/test-results
             cp -a 'output/test-results/${{ matrix.target }}/.' ci-artifacts/test-results/
+          fi
+          if test -d output/test-state; then
+            find output/test-state -type f -name cut-evidence.json -print0 |
+              while IFS= read -r -d '' evidence; do
+                mkdir -p ci-artifacts/test-state
+                cp "$evidence" ci-artifacts/test-state/"$(basename "$(dirname "$evidence")").json"
+              done
           fi
           bundle='output/${{ matrix.target }}/images/emonos-${{ matrix.target }}.raucb'
           if test -f "$bundle"; then

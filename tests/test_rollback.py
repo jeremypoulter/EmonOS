@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from test_rauc import active_slot_hashes, target_file_hash, target_rauc_json
-from common import app_check_command
+from common import TARGET_COMPATIBLE, app_check_command
 
 
 def read_record(command, path: str) -> dict:
@@ -68,7 +68,7 @@ def prepare_update(command, target_name: str, host_path: str, version: str) -> d
             command.run_check(f"cp {shlex.quote(source)} {path}", timeout=120)
     assert target_file_hash(command, path).split()[0] == expected
     info = target_rauc_json(command, f"info --output-format=json {path}")
-    assert info["compatible"] == f"emonos-{target_name}" and info["version"] == version
+    assert info["compatible"] == TARGET_COMPATIBLE[target_name] and info["version"] == version
     _, _, status = command.run(f"rauc install {path} >/mnt/data/wp7-install.log 2>&1", timeout=360)
     assert status == 0, command.run_check("tail -80 /mnt/data/wp7-install.log")
     assert target_rauc_json(command, "status --output-format=json")["boot_primary"] == "kernel.1"
@@ -140,7 +140,7 @@ def test_stage_pi_health_bundle(command, target_name: str) -> None:
     )
     assert target_file_hash(command, path).split()[0] == expected
     info = target_rauc_json(command, f"info --output-format=json {path}")
-    assert info["compatible"] == "emonos-rpi4"
+    assert info["compatible"] == TARGET_COMPATIBLE["rpi4"]
     assert info["version"] in ("0.2.0", "0.2.0-broken")
 
 

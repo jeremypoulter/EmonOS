@@ -23,10 +23,15 @@ case "$version" in
 esac
 if grep -qx 'BR2_x86_64=y' "$BR2_CONFIG"; then
     board=x86-64-vm
+    compatible=emonos-x86-64-vm
     bootloader=grub
     options='grubenv=/mnt/boot/EFI/BOOT/grubenv'
 elif grep -qx 'BR2_aarch64=y' "$BR2_CONFIG"; then
     board=rpi4
+    # The shared Pi boot script is frozen across RAUC updates. Bump the
+    # compatible identity when the factory boot-state format changes so old
+    # single-copy cards cannot install an incompatible redundant-env rootfs.
+    compatible=emonos-rpi4-bootstate-v2
     bootloader=uboot
     options='boot-attempts=1\nboot-attempts-primary=1'
 else
@@ -39,7 +44,7 @@ if [ ! -s "$keys/dev-cert.pem" ] || [ ! -s "$keys/dev-key.pem" ]; then
 fi
 mkdir -p "$target/etc/rauc" "$target/usr/lib/emonos"
 install -m 0644 "$keys/dev-cert.pem" "$target/etc/rauc/keyring.pem"
-sed -e "s/@COMPATIBLE@/emonos-$board/" -e "s/@BOOTLOADER@/$bootloader/" \
+sed -e "s/@COMPATIBLE@/$compatible/" -e "s/@BOOTLOADER@/$bootloader/" \
     -e "s|@BOOTLOADER_OPTIONS@|$options|" "$directory/system.conf.in" > "$target/etc/rauc/system.conf"
 printf '%s\n' "$version" > "$target/usr/lib/emonos/version"
 cat > "$target/usr/lib/os-release" <<EOF
@@ -52,4 +57,4 @@ EOF
 ln -sf ../usr/lib/os-release "$target/etc/os-release"
 # Consumed by the factory data-image hook only, never copied onto existing
 # target data during an update. Both factory slot payloads have this version.
-printf '%s\n' "emonos-$board" > "$target/usr/lib/emonos/compatible"
+printf '%s\n' "$compatible" > "$target/usr/lib/emonos/compatible"

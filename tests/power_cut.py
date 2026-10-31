@@ -1,79 +1,68 @@
-"""T7 host power adapter: kill only this labgrid driver's actual QEMU."""
+"""T7 power adapters for disposable QEMU and physical Raspberry Pi targets."""
 
 import os
-import json
-import hashlib
 import signal
+import subprocess
 import time
-import urllib.parse
-import urllib.request
 from pathlib import Path
 
 from labgrid.util import PtxExpect
 
 
-TASMOTA = "http://172.16.1.2/cm?cmnd="
+FLASH_SCRIPT = Path(__file__).parents[1] / "flash.sh"
 
 
-def tasmota(command: str) -> dict:
-    request = urllib.request.Request(TASMOTA + urllib.parse.quote(command))
-    with urllib.request.urlopen(request, timeout=5) as response:
-        return json.load(response)
+def pi_power_state() -> str:
+    result = subprocess.run(
+        [str(FLASH_SCRIPT), "status"], check=True, capture_output=True, text=True,
+        env=os.environ.copy(), timeout=15,
+    )
+    state = result.stdout.strip()
+    if state not in {"ON", "OFF"}:
+        raise RuntimeError(f"unexpected Pi relay state: {state!r}")
+    return state
 
 
-def power1_state() -> tuple[str, str]:
-    status = tasmota("Status 11")["StatusSTS"]
-    return status["POWER1"], status["POWER5"]
+def set_pi_power(state: str) -> None:
+    if state not in {"ON", "OFF"}:
+        raise ValueError(f"unexpected Pi relay state: {state!r}")
+    subprocess.run(
+        [str(FLASH_SCRIPT), state.lower()], check=True, capture_output=True,
+        text=True, env=os.environ.copy(), timeout=30,
+    )
+    actual = pi_power_state()
+    if actual != state:
+        raise RuntimeError(f"Pi relay requested {state}, reports {actual}")
 
 
 def cut_pi_power1() -> dict:
-    before = power1_state()
-    assert before == ("ON", "ON"), f"unexpected relay state: {before}"
-    tasmota("Power1 OFF")
-    deadline = time.monotonic() + 8
-    while time.monotonic() < deadline:
-        state = power1_state()
-        assert state[1] == before[1], f"Power5 changed during Power1 cut: {state}"
-        if state[0] == "OFF":
-            break
-        time.sleep(0.1)
-    else:
-        raise AssertionError("Power1 did not turn off")
-    time.sleep(5)
-    tasmota("Power1 ON")
-    deadline = time.monotonic() + 8
-    while time.monotonic() < deadline:
-        state = power1_state()
-        assert state[1] == before[1], f"Power5 changed during Power1 restore: {state}"
-        if state[0] == "ON":
-            return {"relay": "Power1", "before": before, "after": state,
-                    "off_seconds": 5, "command": "Power1 OFF/ON"}
-        time.sleep(0.1)
-    raise AssertionError("Power1 did not turn back on")
+    before = pi_power_state()
+    assert before == "ON", f"Pi power must be ON before the cut, reports {before}"
+    try:
+        set_pi_power("OFF")
+        time.sleep(5)
+    finally:
+        set_pi_power("ON")
+    return {"relay": "single-channel Pi Power1", "before": before,
+            "after": pi_power_state(), "off_seconds": 5,
+            "command": "flash.sh off/on"}
 
 
 def complete_guest_triggered_power_cut() -> dict:
-    """Observe Power1 already OFF from the guest watcher, then restore it."""
-    deadline = time.monotonic() + 240
-    while time.monotonic() < deadline:
-        before = power1_state()
-        assert before[1] == "ON", f"Power5 changed during Power1 cut: {before}"
-        if before[0] == "OFF":
-            break
-        time.sleep(0.1)
-    else:
-        raise AssertionError("guest did not turn off Power1 after write progress")
-    time.sleep(5)
-    tasmota("Power1 ON")
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        state = power1_state()
-        assert state[1] == before[1], f"Power5 changed during Power1 restore: {state}"
-        if state[0] == "ON":
-            return {"relay": "Power1", "before": before, "after": state,
-                    "off_seconds": 5, "trigger": "guest-observed rootfs.1 write progress"}
-        time.sleep(0.1)
-    raise AssertionError("Power1 did not restore on")
+    """Cut Pi power only after the guest reports inactive-rootfs write progress."""
+    before = pi_power_state()
+    if before != "ON":
+        raise RuntimeError(f"Pi power must be ON before the cut, reports {before}")
+    try:
+        set_pi_power("OFF")
+        time.sleep(5)
+    finally:
+        set_pi_power("ON")
+    after = pi_power_state()
+    return {"relay": "single-channel Pi Power1", "before": before,
+            "after": after, "off_seconds": 5,
+            "trigger": "guest-observed rootfs.1 write progress",
+            "command": "flash.sh off/on"}
 
 
 def cut_qemu_power(target, command, state_dir: Path) -> dict:

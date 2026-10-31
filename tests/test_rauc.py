@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from common import app_check_command
+from common import TARGET_COMPATIBLE, app_check_command
 
 
 def target_rauc_json(command, arguments: str) -> dict:
@@ -62,7 +62,7 @@ def test_rauc_bundle_payloads(target_name: str, repo_root: Path, tmp_path: Path)
         text=True,
     )
     info = json.loads(result)
-    assert info["compatible"] == f"emonos-{target_name}"
+    assert info["compatible"] == TARGET_COMPATIBLE[target_name]
     assert info["version"] == (output / "target/usr/lib/emonos/version").read_text().strip()
     subprocess.run(
         [str(rauc), f"--keyring={keyring}", "extract", str(bundle), str(tmp_path / "payload")],
@@ -99,7 +99,7 @@ def test_rauc_status(command, target_name: str) -> None:
     """T4, OS-1, OS-2: RAUC reads both grouped slots and bootloader state."""
     command.run_check("systemctl is-active --quiet rauc.service")
     result = target_rauc_json(command, "status --detailed --output-format=json")
-    assert result["compatible"] == f"emonos-{target_name}"
+    assert result["compatible"] == TARGET_COMPATIBLE[target_name]
     assert result["booted"] == "A", json.dumps(result)
     if result["boot_primary"] != "kernel.0":
         if target_name == "x86-64-vm":
@@ -119,7 +119,7 @@ def test_rauc_status(command, target_name: str) -> None:
         assert kernel["state"] == ("booted" if index == 0 else "inactive")
         for slot in (kernel, rootfs):
             compatible = slot["slot_status"]["bundle"]["compatible"]
-            assert compatible == f"emonos-{target_name}"
+            assert compatible == TARGET_COMPATIBLE[target_name]
             # Central status is historical metadata, not a digest of the raw
             # partition. After an interrupted write, B may still report the
             # last successfully installed version (or none); only booted A
@@ -153,7 +153,7 @@ def test_rauc_bundle_on_target(command, target_name: str, repo_root: Path) -> No
     if not path:
         pytest.skip("provide a QEMU bundle, target bundle path or bundle URL for T4")
     result = target_rauc_json(command, f"info --output-format=json {shlex.quote(path)}")
-    assert result["compatible"] == f"emonos-{target_name}"
+    assert result["compatible"] == TARGET_COMPATIBLE[target_name]
     assert result["version"] == command.run_check("cat /usr/lib/emonos/version")[0]
 
 
@@ -172,7 +172,7 @@ def test_stage_pi_update_bundle(command, target_name: str) -> None:
     )
     assert command.run_check(f"sha256sum {path}")[0].split()[0] == expected_hash
     info = target_rauc_json(command, f"info --output-format=json {path}")
-    assert info["compatible"] == "emonos-rpi4"
+    assert info["compatible"] == TARGET_COMPATIBLE["rpi4"]
     assert info["version"] == "0.2.0"
     assert command.run_check("cat /usr/lib/emonos/version") == ["0.1.0"]
 
@@ -222,7 +222,7 @@ def test_update_round_trip(command, target, target_name: str) -> None:
             command.run_check(f"cp {shlex.quote(supplied_path)} {path}", timeout=120)
     assert command.run_check(f"sha256sum {path}")[0].split()[0] == expected_hash
     manifest = target_rauc_json(command, f"info --output-format=json {path}")
-    assert manifest["compatible"] == f"emonos-{target_name}"
+    assert manifest["compatible"] == TARGET_COMPATIBLE[target_name]
     assert manifest["version"] == "0.2.0"
 
     _, _, install_status = command.run(

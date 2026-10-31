@@ -12,7 +12,12 @@ slot reporting pass on both targets (WP5, T4). Signed A→B installs with data
 survival pass on both targets (WP6, T5). Health-based commit and autonomous
 broken-update rollback and interrupted-install recovery pass on both (WP7,
 T6/T7). Pi Power1 was verified and used for a five-second mid-install cut;
-Power5 was left ON and untouched.
+Power5 was left ON and untouched in the earlier relay setup. The new redundant
+boot-state v2 factory image was flashed and physically qualified on 2026-10-31:
+healthy A→B commit, autonomous broken-B rollback and an interrupted-install
+Power1 cut all recovered to healthy A with data intact. New Pi bundles use
+`emonos-rpi4-bootstate-v2`; older single-copy Pi cards require a backed-up
+factory reflash before using them.
 The shared T8 suite and requirement coverage are complete on x86 and Pi.
 See `Docs/emonos-poc-implementation-plan.md` for the PoC scope.
 For build, flash, first-boot, update and test procedures, see the
