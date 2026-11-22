@@ -118,7 +118,11 @@ def test_interrupted_install_keeps_active_slot(command, target, target_name: str
     # Keep output on serial so the cut follows observed progress, not a sleep.
     command.console.sendline(
         "while ! grep -qE '^ [4-8][0-9]% Copying image to rootfs.1$' /mnt/data/t7-install.log; "
-        "do sleep 1; done; echo T7_ROOTFS_WRITE_PROGRESS; tail -3 /mnt/data/t7-install.log"
+        "do sleep 1; done; "
+        # Report the line that satisfied the wait. Re-reading the log tail here
+        # raced with the install (a stalled guest had already reached 97-99%).
+        "echo T7_ROOTFS_WRITE_PROGRESS; "
+        "grep -E '^ [4-8][0-9]% Copying image to rootfs.1$' /mnt/data/t7-install.log | head -1"
     )
     command.console.expect("T7_ROOTFS_WRITE_PROGRESS\\r?\\n", timeout=180)
     _, preceding, match, _ = command.console.expect(r"([4-8][0-9])% Copying image to rootfs\.1", timeout=30)
