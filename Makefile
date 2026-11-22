@@ -1,5 +1,6 @@
 BUILDROOT_DIR := $(CURDIR)/buildroot
 EXTERNAL_DIR := $(CURDIR)/buildroot-external
+COMMON_DIR := $(CURDIR)/common
 OUTPUT_BASE ?= $(CURDIR)/output
 HOST_TOOLS := $(CURDIR)/tools/bin
 # Buildroot's pinned commit is the common source epoch on every build host.
@@ -16,7 +17,7 @@ RPI4_OUTPUT := $(OUTPUT_BASE)/rpi4
 .PHONY: emonos_x86_64_vm emonos_rpi4 run_x86_64_vm clean_x86_64_vm rauc_dev_keys
 
 rauc_dev_keys:
-	$(EXTERNAL_DIR)/ota/dev-keys.sh "$(EMONOS_RAUC_KEY_DIR)"
+	$(COMMON_DIR)/ota/dev-keys.sh "$(EMONOS_RAUC_KEY_DIR)"
 
 emonos_x86_64_vm:
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(BUILDROOT_DIR) O=$(X86_OUTPUT) BR2_EXTERNAL=$(EXTERNAL_DIR) emonos_x86_64_vm_defconfig
