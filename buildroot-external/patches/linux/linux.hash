@@ -1,0 +1,10 @@
+# Hashes for the kernel source tarballs used by the EmonOS defconfigs.
+# Buildroot picks this file up through BR2_GLOBAL_PATCH_DIR and verifies the
+# downloaded tarball against it, so a changed or tampered tarball fails the build.
+#
+# x86-64-vm: https://cdn.kernel.org/pub/linux/kernel/v6.x/sha256sums.asc
+sha256  e82fe40871743048226987bd349ef107168b15aab90140e872ca4ed470922e25  linux-6.12.47.tar.xz
+# rpi4 (raspberrypi/linux 21b410140c47): TODO add the sha256 of
+# linux-21b410140c47ffab5668399f6f143c7d7b935c8b.tar.gz. It could not be
+# fetched while preparing this change; Buildroot prints it when the hash is
+# missing (see the build log of the PR's rpi4 job).
