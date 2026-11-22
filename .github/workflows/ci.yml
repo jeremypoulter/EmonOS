@@ -40,6 +40,11 @@ jobs:
           find buildroot-external ci tests -type f \( -name '*.sh' -o -path '*/usr/libexec/*' \) \
             -print0 | xargs -0r shellcheck
 
+      - name: TEMP print rpi kernel tarball sha256
+        run: |
+          curl -fsSL https://github.com/raspberrypi/linux/archive/21b410140c47ffab5668399f6f143c7d7b935c8b.tar.gz -o /tmp/k.tgz
+          sha256sum /tmp/k.tgz
+
       - name: Validate Compose definition
         run: docker compose -f buildroot-external/app/docker-compose.yml config --quiet
 
