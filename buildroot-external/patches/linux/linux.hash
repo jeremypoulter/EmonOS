@@ -4,7 +4,5 @@
 #
 # x86-64-vm: https://cdn.kernel.org/pub/linux/kernel/v6.x/sha256sums.asc
 sha256  e82fe40871743048226987bd349ef107168b15aab90140e872ca4ed470922e25  linux-6.12.47.tar.xz
-# rpi4 (raspberrypi/linux 21b410140c47): TODO add the sha256 of
-# linux-21b410140c47ffab5668399f6f143c7d7b935c8b.tar.gz. It could not be
-# fetched while preparing this change; Buildroot prints it when the hash is
-# missing (see the build log of the PR's rpi4 job).
+# rpi4: raspberrypi/linux commit 21b410140c47 (GitHub archive tarball)
+sha256  7c31df8061aae748a6e72417bfe743a54198fb5bdc96e229ecc605dc621d32ef  linux-21b410140c47ffab5668399f6f143c7d7b935c8b.tar.gz
