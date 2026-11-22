@@ -40,7 +40,7 @@ def make_archive(path: Path, timestamp: int, reverse: bool) -> None:
 
 def test_canonical_archive_ignores_export_order_and_timestamps(tmp_path: Path) -> None:
     script = runpy.run_path(
-        str(Path(__file__).parents[1] / "buildroot-external/app/canonicalize-docker-archive.py")
+        str(Path(__file__).parents[1] / "common/app/canonicalize-docker-archive.py")
     )
     paths = [tmp_path / "first.tar", tmp_path / "second.tar"]
     outputs = [tmp_path / "first-normal.tar", tmp_path / "second-normal.tar"]

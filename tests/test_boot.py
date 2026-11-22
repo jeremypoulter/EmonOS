@@ -54,7 +54,7 @@ def test_target_image_is_present(target_name: str, repo_root: Path) -> None:
 def test_data_partition_type_matches_repart(target_name: str, repo_root: Path) -> None:
     """WP4: systemd-repart must match only the last data partition."""
     expected = "93c548ef-01e5-4bad-a92c-f5b0fd394e78"
-    config = (repo_root / "buildroot-external/app/rootfs-overlay/usr/lib/repart.d/80-emonos-data.conf")
+    config = (repo_root / "common/app/rootfs-overlay/usr/lib/repart.d/80-emonos-data.conf")
     assert f"Type={expected}" in config.read_text()
     image = repo_root / f"output/{target_name}/images/emonos-{target_name}.img"
     if not image.is_file():

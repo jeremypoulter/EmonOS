@@ -3,7 +3,7 @@ set -eu
 umask 022
 
 BOARD_DIR=$(dirname "$0")
-EXTERNAL_DIR=$(CDPATH='' cd -- "${BOARD_DIR}/../../.." && pwd)
+COMMON_DIR=$(CDPATH='' cd -- "${BOARD_DIR}/../../../../common" && pwd)
 
 # Buildroot's GRUB package already created bootx64.efi in this tree. The
 # board hook supplies only the runtime configuration and partition image.
@@ -14,7 +14,7 @@ cp "${BOARD_DIR}/grub.cfg.in" "${BINARIES_DIR}/efi-part/EFI/BOOT/grub.cfg"
 find "${BINARIES_DIR}/efi-part/EFI" -depth -print0 |
     xargs -0 -r touch -h -d "@$SOURCE_DATE_EPOCH"
 cp "${BOARD_DIR}/genimage.cfg.in" "${BINARIES_DIR}/genimage.cfg"
-"${EXTERNAL_DIR}/genimage/prepare-images.sh" "$BOARD_DIR" bzImage
+"${COMMON_DIR}/genimage/prepare-images.sh" "$BOARD_DIR" bzImage
 
 support/scripts/genimage.sh -c "${BINARIES_DIR}/genimage.cfg"
-"${EXTERNAL_DIR}/ota/bundle.sh" x86-64-vm
+"${COMMON_DIR}/ota/bundle.sh" x86-64-vm
