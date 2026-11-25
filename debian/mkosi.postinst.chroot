@@ -1,0 +1,10 @@
+#!/bin/sh
+# Debian's kernel builds squashfs as a module, so the kernel slot needs an
+# initrd. initramfs-tools with an explicit module list keeps it small.
+set -eu
+kver=$(ls /usr/lib/modules)
+printf 'MODULES=list\nCOMPRESS=zstd\n' > /etc/initramfs-tools/conf.d/emonos.conf
+# Comma-separated: mkosi splits --environment values on whitespace.
+echo "$EMONOS_INITRD_MODULES" | tr , '\n' > /etc/initramfs-tools/modules
+mkdir -p /usr/lib/emonos
+mkinitramfs -o /usr/lib/emonos/initrd "$kver"

@@ -424,3 +424,42 @@ jobs:
           path: output/${{ matrix.target }}/images/emonos-${{ matrix.target }}.img
           if-no-files-found: error
           retention-days: 3
+
+  debian-x86-64-vm:
+    name: Build Debian x86-64-vm (VARIANT=debian)
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - name: Build the Debian image
+        run: |
+          make rauc_dev_keys
+          make VARIANT=debian emonos_x86_64_vm
+
+      - name: Check the build outputs
+        run: |
+          images=output/debian/x86-64-vm/images
+          ls -l "$images"
+          for f in emonos-x86-64-vm.img emonos-x86-64-vm.raucb OVMF.fd; do
+            test -s "$images/$f"
+          done
+          sha256sum "$images/emonos-x86-64-vm.raucb" | tee bundle.sha256
+          rauc --keyring=output/signing/dev-cert.pem info "$images/emonos-x86-64-vm.raucb" ||
+            docker run --rm --volume "$PWD:/workspace" --workdir /workspace \
+              emonos-builder-debian:local rauc \
+              --keyring=output/signing/dev-cert.pem info "$images/emonos-x86-64-vm.raucb"
+
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: debian-x86-64-vm-${{ github.sha }}
+          path: |
+            bundle.sha256
+            output/debian/x86-64-vm/images/emonos-x86-64-vm.raucb.sha256
+          if-no-files-found: warn
+          retention-days: 14
