@@ -33,6 +33,15 @@ For a short live presentation sequence, see the
 - `buildroot-external/` is the Buildroot external tree: defconfigs, kernel
   fragments and per-board boot hooks.
 
+## Build variants
+
+`make VARIANT=buildroot ...` (the default) builds with Buildroot into
+`output/<target>`. `VARIANT=debian` is reserved for the mkosi-based Debian
+images and builds into `output/debian/<target>`; the targets are added in
+follow-up work, and the CI builder already contains mkosi. Debian bundles use
+their own RAUC compatible string (`emonos-debian-<board>`), so a bundle cannot
+be installed on the other variant.
+
 ## Build the x86 VM image
 
 ```sh

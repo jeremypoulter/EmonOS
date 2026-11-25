@@ -11,8 +11,22 @@ export EMONOS_VERSION ?= 0.1.0
 export EMONOS_APP_FAULT ?= none
 export EMONOS_RAUC_KEY_DIR ?= $(OUTPUT_BASE)/signing
 
-X86_OUTPUT := $(OUTPUT_BASE)/x86-64-vm
-RPI4_OUTPUT := $(OUTPUT_BASE)/rpi4
+# VARIANT selects the OS build system. Buildroot output stays at
+# output/<target> so existing paths, tests and CI are unchanged; every other
+# variant builds into output/<variant>/<target>.
+VARIANT ?= buildroot
+ifeq ($(filter $(VARIANT),buildroot debian),)
+$(error VARIANT must be buildroot or debian, got '$(VARIANT)')
+endif
+export EMONOS_VARIANT := $(VARIANT)
+ifeq ($(VARIANT),buildroot)
+VARIANT_OUTPUT := $(OUTPUT_BASE)
+else
+VARIANT_OUTPUT := $(OUTPUT_BASE)/$(VARIANT)
+endif
+
+X86_OUTPUT := $(VARIANT_OUTPUT)/x86-64-vm
+RPI4_OUTPUT := $(VARIANT_OUTPUT)/rpi4
 
 .PHONY: emonos_x86_64_vm emonos_rpi4 run_x86_64_vm clean_x86_64_vm rauc_dev_keys
 
@@ -20,10 +34,16 @@ rauc_dev_keys:
 	$(COMMON_DIR)/ota/dev-keys.sh "$(EMONOS_RAUC_KEY_DIR)"
 
 emonos_x86_64_vm:
+ifeq ($(VARIANT),debian)
+	$(error VARIANT=debian x86-64-vm is not implemented yet)
+endif
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(BUILDROOT_DIR) O=$(X86_OUTPUT) BR2_EXTERNAL=$(EXTERNAL_DIR) emonos_x86_64_vm_defconfig
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(X86_OUTPUT)
 
 emonos_rpi4:
+ifeq ($(VARIANT),debian)
+	$(error VARIANT=debian rpi4 is not implemented yet)
+endif
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(BUILDROOT_DIR) O=$(RPI4_OUTPUT) BR2_EXTERNAL=$(EXTERNAL_DIR) emonos_rpi4_defconfig
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(RPI4_OUTPUT)
 
