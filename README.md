@@ -38,7 +38,7 @@ For a short live presentation sequence, see the
 `make VARIANT=buildroot ...` (the default) builds with Buildroot into
 `output/<target>`. `VARIANT=debian` is reserved for the mkosi-based Debian
 images and builds into `output/debian/<target>`; the targets are added in
-follow-up work, and the CI builder already contains mkosi. Debian bundles use
+follow-up work; its builder image is `ci/builder/debian.Dockerfile`. Debian bundles use
 their own RAUC compatible string (`emonos-debian-<board>`), so a bundle cannot
 be installed on the other variant.
 

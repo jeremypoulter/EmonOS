@@ -32,13 +32,11 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
 
 # Buildroot host requirements (see buildroot/support/dependencies) plus the
 # host libraries needed by its kernel, EDK2 and GRUB builds, and the Docker CLI
-# used by common/app/preload-images.sh. mkosi and debootstrap are for the
-# Debian variant (VARIANT=debian).
+# used by common/app/preload-images.sh.
 RUN apt-get update \
  && apt-get install --yes --no-install-recommends \
         bash bc bison build-essential bzip2 cpio diffutils docker-cli file \
-        debootstrap dosfstools findutils flex g++ gawk gcc git gzip libelf-dev \
-        libncurses-dev mkosi \
+        findutils flex g++ gawk gcc git gzip libelf-dev libncurses-dev \
         libssl-dev make mtools patch perl python3 rsync sed tar unzip wget \
         which xz-utils \
  && rm -rf /var/lib/apt/lists/*
