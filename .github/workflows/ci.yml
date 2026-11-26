@@ -37,14 +37,14 @@ jobs:
 
       - name: ShellCheck EmonOS scripts
         run: |
-          find buildroot-external ci tests -type f \( -name '*.sh' -o -path '*/usr/libexec/*' \) \
+          find buildroot-external common ci tests -type f \( -name '*.sh' -o -path '*/usr/libexec/*' \) \
             -print0 | xargs -0r shellcheck
 
       - name: Validate Compose definition
         run: |
-          buildroot-external/app/images-env.sh buildroot-external/app/images.lock > "$RUNNER_TEMP/images.env"
+          common/app/images-env.sh common/app/images.lock > "$RUNNER_TEMP/images.env"
           docker compose --env-file "$RUNNER_TEMP/images.env" \
-            -f buildroot-external/app/docker-compose.yml config --quiet
+            -f common/app/docker-compose.yml config --quiet
 
       - name: Validate data-image host tool selections
         run: |
@@ -60,7 +60,7 @@ jobs:
           done
 
       - name: Compile Python test harness
-        run: python3 -m py_compile tests/*.py buildroot-external/app/*.py
+        run: python3 -m py_compile tests/*.py common/app/*.py
 
       - name: Validate generated requirement coverage
         run: python3 tests/requirement_coverage.py --check
@@ -68,7 +68,7 @@ jobs:
       - name: Reject developer-specific build paths
         run: |
           pattern='open''code|CLAUDE''_JOB_DIR'
-          if git grep -inE "$pattern" -- .github ci tests buildroot-external Makefile; then
+          if git grep -inE "$pattern" -- .github ci tests buildroot-external common Makefile; then
             echo 'Build and test paths must not depend on a developer harness.' >&2
             exit 1
           fi

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "platform": "github",
+  "onboarding": false,
+  "requireConfig": "required",
+  "gitAuthor": "EmonOS Renovate <renovate@users.noreply.github.com>",
+  "allowedCommands": [],
+  "automerge": false
+}

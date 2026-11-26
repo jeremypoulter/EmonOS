@@ -83,7 +83,7 @@ def test_rauc_bundle_payloads(target_name: str, repo_root: Path, tmp_path: Path)
 
 def test_rauc_rejects_untrusted_signer(target_name: str, repo_root: Path, tmp_path: Path) -> None:
     """T4, OS-1: a bundle must reject an unrelated development keyring."""
-    subprocess.run([str(repo_root / "buildroot-external/ota/dev-keys.sh"), str(tmp_path)],
+    subprocess.run([str(repo_root / "common/ota/dev-keys.sh"), str(tmp_path)],
                    check=True, capture_output=True)
     output = repo_root / "output" / target_name
     result = subprocess.run([
