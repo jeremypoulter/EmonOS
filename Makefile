@@ -15,8 +15,11 @@ export EMONOS_RAUC_KEY_DIR ?= $(OUTPUT_BASE)/signing
 # output/<target> so existing paths, tests and CI are unchanged; every other
 # variant builds into output/<variant>/<target>.
 VARIANT ?= buildroot
-ifeq ($(filter $(VARIANT),buildroot debian),)
+# Exact comparisons: $(filter) would treat a value such as deb% as a pattern.
+ifneq ($(VARIANT),buildroot)
+ifneq ($(VARIANT),debian)
 $(error VARIANT must be buildroot or debian, got '$(VARIANT)')
+endif
 endif
 export EMONOS_VARIANT := $(VARIANT)
 ifeq ($(VARIANT),buildroot)
