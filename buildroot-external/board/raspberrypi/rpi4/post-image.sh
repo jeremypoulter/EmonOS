@@ -3,7 +3,7 @@ set -euo pipefail
 umask 022
 
 BOARD_DIR=$(dirname "$0")
-EXTERNAL_DIR=$(CDPATH='' cd -- "${BOARD_DIR}/../../.." && pwd)
+COMMON_DIR=$(CDPATH='' cd -- "${BOARD_DIR}/../../../../common" && pwd)
 GENIMAGE_TMP="${BUILD_DIR}/genimage.tmp"
 ROOTPATH_TMP=$(mktemp -d)
 trap 'rm -rf "$ROOTPATH_TMP"' EXIT
@@ -40,7 +40,7 @@ while IFS= read -r line; do
         printf '%s\n' "$line"
     fi
 done < "${BOARD_DIR}/genimage.cfg.in" > "${BINARIES_DIR}/genimage.cfg"
-"${EXTERNAL_DIR}/genimage/prepare-images.sh" "$BOARD_DIR" Image
+"${COMMON_DIR}/genimage/prepare-images.sh" "$BOARD_DIR" Image
 printf 'BOOT_ORDER=A B\nBOOT_A_LEFT=1\nBOOT_B_LEFT=0\n' > "${BUILD_DIR}/emonos-bootstate.env"
 "${BUILD_DIR}/uboot-2026.01/tools/mkenvimage" -r -s 16384 \
     -o "${BUILD_DIR}/emonos-bootstate.bin" "${BUILD_DIR}/emonos-bootstate.env"
@@ -56,4 +56,4 @@ genimage \
     --inputpath "${BINARIES_DIR}" \
     --outputpath "${BINARIES_DIR}" \
     --config "${BINARIES_DIR}/genimage.cfg"
-"${EXTERNAL_DIR}/ota/bundle.sh" rpi4
+"${COMMON_DIR}/ota/bundle.sh" rpi4

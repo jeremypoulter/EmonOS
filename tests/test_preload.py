@@ -10,7 +10,7 @@ import pytest
 
 
 SCRIPT = (Path(__file__).parents[1]
-          / "buildroot-external/app/rootfs-overlay/usr/libexec/emonos-preload")
+          / "common/app/rootfs-overlay/usr/libexec/emonos-preload")
 REQUIRED_TOOLS = ("mkfifo", "tee", "sha256sum", "awk", "mktemp")
 
 

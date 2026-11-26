@@ -25,6 +25,14 @@ For build, flash, first-boot, update and test procedures, see the
 For a short live presentation sequence, see the
 [`demo runbook`](Docs/emonos-demo-guide.md).
 
+## Repository layout
+
+- `common/` holds everything shared between OS variants: the root filesystem
+  overlay and app preload (`common/app/`), RAUC/OTA scripts (`common/ota/`)
+  and genimage partition recipes (`common/genimage/`).
+- `buildroot-external/` is the Buildroot external tree: defconfigs, kernel
+  fragments and per-board boot hooks.
+
 ## Build the x86 VM image
 
 ```sh

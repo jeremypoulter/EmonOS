@@ -7,22 +7,23 @@ from pathlib import Path
 import pytest
 
 
-OTA = Path(__file__).parents[1] / "buildroot-external/ota"
+OTA = Path(__file__).parents[1] / "common/ota"
+EXTERNAL = Path(__file__).parents[1] / "buildroot-external"
 
 
 def test_grub_embeds_slot_selection_commands():
-    config = (OTA.parent / "configs/emonos_x86_64_vm_defconfig").read_text()
+    config = (EXTERNAL / "configs/emonos_x86_64_vm_defconfig").read_text()
     line = next(line for line in config.splitlines()
                 if line.startswith("BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI="))
     modules = line.split('"')[1].split()
     assert {"test", "echo", "serial", "terminfo", "loadenv", "linux", "squash4"} <= set(modules)
-    grub = (OTA.parent / "board/pc/x86-64-vm/grub.cfg.in").read_text()
+    grub = (EXTERNAL / "board/pc/x86-64-vm/grub.cfg.in").read_text()
     assert "terminal_output serial" in grub
     assert 'echo "Booting Slot B"' in grub
 
 
 def test_early_kernel_failure_reboots_and_root_wait_is_bounded():
-    external = OTA.parent
+    external = EXTERNAL
     kernel_policy = (external / "board/common/kernel-rauc.config").read_text()
     assert "CONFIG_PANIC_TIMEOUT=10" in kernel_policy
     assert "rootwait=30" in (external / "board/pc/x86-64-vm/grub.cfg.in").read_text()
@@ -32,7 +33,7 @@ def test_early_kernel_failure_reboots_and_root_wait_is_bounded():
 
 
 def test_pi_bootstate_is_redundant_and_uses_fixed_partition_offsets():
-    external = OTA.parent
+    external = EXTERNAL
     uboot = (external / "board/raspberrypi/rpi4/uboot-squashfs.config").read_text()
     assert "CONFIG_ENV_IS_IN_MMC=y" in uboot
     assert "CONFIG_ENV_REDUNDANT=y" in uboot
