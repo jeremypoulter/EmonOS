@@ -10,6 +10,12 @@ FROM debian:trixie-slim
 
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC
 
+# The base image has no CA bundle and the snapshot service is HTTPS-only, so
+# bootstrap ca-certificates from the base image's archive first.
+RUN apt-get update \
+ && apt-get install --yes --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 ARG DEBIAN_SNAPSHOT=20261120T000000Z
 RUN if [ -n "$DEBIAN_SNAPSHOT" ]; then \
       printf '%s\n' \
