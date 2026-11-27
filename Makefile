@@ -49,6 +49,9 @@ emonos_x86_64_vm:
 	    --workdir /workspace $(DEBIAN_BUILDER) sh debian/build.sh
 else
 emonos_x86_64_vm:
+ifeq ($(VARIANT),debian)
+	$(error VARIANT=debian x86-64-vm is not implemented yet)
+endif
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(BUILDROOT_DIR) O=$(X86_OUTPUT) BR2_EXTERNAL=$(EXTERNAL_DIR) emonos_x86_64_vm_defconfig
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(X86_OUTPUT)
 endif
