@@ -366,7 +366,13 @@ jobs:
           find output/test-results/x86-64-vm -path '*labgrid/console_main' -print0 |
             while IFS= read -r -d '' console; do
               echo "::group::Guest console tail: $console"
-              sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$console" | tr -d '\r' | tail -n 200
+              # Strip CSI (including colon-separated colours), OSC and DCS
+              # sequences; the guest emits systemd OSC/DCS context markers.
+              sed -E 's/\x1b\[[0-9;:?]*[ -\/]*[@-~]//g;
+                       s/\x1b\][^\x07\x1b]*(\x07|\x1b\\)//g;
+                       s/\x1bP[^\x1b]*\x1b\\//g' "$console" |
+                tr -d '\r' | tail -n 200
+              echo
               echo '::endgroup::'
             done
 
