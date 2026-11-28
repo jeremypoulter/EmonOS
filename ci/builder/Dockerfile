@@ -32,7 +32,7 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
 
 # Buildroot host requirements (see buildroot/support/dependencies) plus the
 # host libraries needed by its kernel, EDK2 and GRUB builds, and the Docker CLI
-# used by buildroot-external/app/preload-images.sh.
+# used by common/app/preload-images.sh.
 RUN apt-get update \
  && apt-get install --yes --no-install-recommends \
         bash bc bison build-essential bzip2 cpio diffutils docker-cli file \

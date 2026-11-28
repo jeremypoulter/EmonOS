@@ -13,11 +13,12 @@ from test_rollback import reboot_into
 from common import app_check_command
 
 
-OVERLAY = Path(__file__).parents[1] / "buildroot-external/app/rootfs-overlay"
+OVERLAY = Path(__file__).parents[1] / "common/app/rootfs-overlay"
+EXTERNAL = Path(__file__).parents[1] / "buildroot-external"
 
 
 def test_runtime_tools_are_explicit_and_probe_needs_no_regex_library():
-    external = OVERLAY.parents[1]
+    external = EXTERNAL
     for target in ("emonos_x86_64_vm", "emonos_rpi4"):
         config = (external / f"configs/{target}_defconfig").read_text()
         assert "board/common/busybox-health.config" in config

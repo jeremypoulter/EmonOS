@@ -6,7 +6,7 @@
 # The checkout is mounted at /workspace, so Buildroot paths are identical on
 # every CI run. The container receives only the checkout, the Buildroot
 # download cache, the ccache directory and the Docker socket required by
-# buildroot-external/app/preload-images.sh.
+# common/app/preload-images.sh.
 #
 # A mounted Docker socket gives the command control of the Docker daemon, which
 # is equivalent to root on the host. Use this wrapper only on ephemeral runners.

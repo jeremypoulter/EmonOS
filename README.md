@@ -25,6 +25,23 @@ For build, flash, first-boot, update and test procedures, see the
 For a short live presentation sequence, see the
 [`demo runbook`](Docs/emonos-demo-guide.md).
 
+## Repository layout
+
+- `common/` holds everything shared between OS variants: the root filesystem
+  overlay and app preload (`common/app/`), RAUC/OTA scripts (`common/ota/`)
+  and genimage partition recipes (`common/genimage/`).
+- `buildroot-external/` is the Buildroot external tree: defconfigs, kernel
+  fragments and per-board boot hooks.
+
+## Build variants
+
+`make VARIANT=buildroot ...` (the default) builds with Buildroot into
+`output/<target>`. `VARIANT=debian` is reserved for the mkosi-based Debian
+images and builds into `output/debian/<target>`; the targets are added in
+follow-up work; its builder image is `ci/builder/debian.Dockerfile`. Debian bundles use
+their own RAUC compatible string (`emonos-debian-<board>`), so a bundle cannot
+be installed on the other variant.
+
 ## Build the x86 VM image
 
 ```sh
