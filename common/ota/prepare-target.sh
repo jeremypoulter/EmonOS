@@ -38,6 +38,13 @@ else
     echo 'Unsupported RAUC board' >&2
     exit 1
 fi
+# Each OS variant has its own compatible string so a bundle built for one
+# variant is rejected by the other. Buildroot keeps the historical names.
+case "${EMONOS_VARIANT:-buildroot}" in
+    buildroot) ;;
+    debian) compatible=emonos-debian-${compatible#emonos-} ;;
+    *) echo 'Unknown EmonOS variant' >&2; exit 1 ;;
+esac
 if [ ! -s "$keys/dev-cert.pem" ] || [ ! -s "$keys/dev-key.pem" ]; then
     echo 'Missing RAUC credentials; run make rauc_dev_keys first' >&2
     exit 1
