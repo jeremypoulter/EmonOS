@@ -60,7 +60,7 @@ mkosi -C "$here" --architecture=x86-64 --output-dir="$work" \
 
 # 2. Shared overlay and hooks, as Buildroot's post-build step applies them.
 cp -a --remove-destination "$common/app/rootfs-overlay/." \
-    "$ext/board/pc/x86-64-vm/rootfs-overlay/." "$root/"
+    "$ext/board/pc/x86-64-vm/rootfs-overlay/." "$here/rootfs-overlay/." "$root/"
 # prepare-target.sh reads the architecture from Buildroot's .config.
 printf '%s\n' 'BR2_x86_64=y' > "$work/br2.config"
 BR2_CONFIG=$work/br2.config "$common/ota/prepare-target.sh" "$root"
