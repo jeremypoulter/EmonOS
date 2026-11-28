@@ -211,9 +211,16 @@ def test_container_crash_restarts_web(command) -> None:
 
     # `docker kill` is an intentional operator stop and suppresses Docker's
     # restart policy. Kill the actual container process to model a crash.
-    command.run_check(
-        "kill -KILL \"$(docker inspect -f '{{.State.Pid}}' emonos-web-1)\""
+    # Only kill a running container with a real PID. `kill -KILL 0` signals the
+    # whole process group, which takes down the console login session and fails
+    # every later test with a lost console; the container can briefly report
+    # PID 0 while it restarts, so wait for a running state instead.
+    killed = command.poll_until_success(
+        "pid=\"$(docker inspect -f '{{.State.Pid}}' emonos-web-1)\" "
+        "&& test \"${pid:-0}\" -gt 0 && kill -KILL \"$pid\"",
+        tries=20, timeout=90.0, sleepduration=3,
     )
+    assert killed, command.run_check("docker inspect emonos-web-1")
     recovered = command.poll_until_success(
         "test \"$(docker inspect -f '{{.RestartCount}}' emonos-web-1)\" -ge 1 "
         "&& curl -fsS --max-time 5 http://127.0.0.1/ >/dev/null",
