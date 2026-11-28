@@ -36,12 +36,25 @@ RPI4_OUTPUT := $(VARIANT_OUTPUT)/rpi4
 rauc_dev_keys:
 	$(COMMON_DIR)/ota/dev-keys.sh "$(EMONOS_RAUC_KEY_DIR)"
 
+ifeq ($(VARIANT),debian)
+# The Debian build runs mkosi in its own builder image. --privileged is for
+# mkosi's chroot and loop handling; the Docker socket is for the application
+# image preload. Use only on ephemeral hosts.
+DEBIAN_BUILDER ?= emonos-builder-debian:local
+emonos_x86_64_vm:
+	docker build --tag $(DEBIAN_BUILDER) $(CURDIR)/ci/builder -f $(CURDIR)/ci/builder/debian.Dockerfile
+	docker run --rm --privileged --env SOURCE_DATE_EPOCH --env EMONOS_VERSION --env EMONOS_APP_FAULT \
+	    --env EMONOS_RAUC_KEY_DIR=/workspace/output/signing --env EMONOS_DEBIAN_OUTPUT=/workspace/output/debian/x86-64-vm \
+	    --volume $(CURDIR):/workspace --volume /var/run/docker.sock:/var/run/docker.sock \
+	    --workdir /workspace $(DEBIAN_BUILDER) sh debian/build.sh
+else
 emonos_x86_64_vm:
 ifeq ($(VARIANT),debian)
 	$(error VARIANT=debian x86-64-vm is not implemented yet)
 endif
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(BUILDROOT_DIR) O=$(X86_OUTPUT) BR2_EXTERNAL=$(EXTERNAL_DIR) emonos_x86_64_vm_defconfig
 	PATH=$(HOST_TOOLS):$$PATH $(MAKE) -C $(X86_OUTPUT)
+endif
 
 emonos_rpi4:
 ifeq ($(VARIANT),debian)

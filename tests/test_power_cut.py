@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from common import TARGET_COMPATIBLE
 from power_cut import (complete_guest_triggered_power_cut, cut_qemu_power,
                        pi_power_state, restore_qemu_power)
 from test_rauc import active_slot_hashes, target_file_hash, target_rauc_json
@@ -89,7 +90,7 @@ def test_interrupted_install_keeps_active_slot(command, target, target_name: str
         expected_bundle = hashlib.file_digest(source, "sha256").hexdigest()
     assert target_file_hash(command, "/mnt/data/t7-update.raucb").split()[0] == expected_bundle
     manifest = target_rauc_json(command, "info --output-format=json /mnt/data/t7-update.raucb")
-    assert manifest["compatible"] == "emonos-x86-64-vm" and manifest["version"] == "0.2.0"
+    assert manifest["compatible"] == TARGET_COMPATIBLE["x86-64-vm"] and manifest["version"] == "0.2.0"
     new_root = next(entry["rootfs"]["checksum"] for entry in manifest["images"] if "rootfs" in entry)
     assert original_b != new_root
     payload = state / "payload"

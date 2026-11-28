@@ -7,9 +7,11 @@ import time
 from pathlib import Path
 
 
+# The Debian variant has its own compatible strings (see common/ota/prepare-target.sh).
+_VARIANT_PREFIX = "emonos-debian-" if os.environ.get("EMONOS_VARIANT") == "debian" else "emonos-"
 TARGET_COMPATIBLE = {
-    "x86-64-vm": "emonos-x86-64-vm",
-    "rpi4": "emonos-rpi4-bootstate-v2",
+    "x86-64-vm": f"{_VARIANT_PREFIX}x86-64-vm",
+    "rpi4": f"{_VARIANT_PREFIX}rpi4-bootstate-v2",
 }
 
 

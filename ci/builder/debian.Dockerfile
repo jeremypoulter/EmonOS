@@ -36,7 +36,7 @@ RUN if [ -n "$DEBIAN_SNAPSHOT" ]; then \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       mkosi apt dpkg debian-archive-keyring ca-certificates curl gpg git openssl \
       squashfs-tools genimage rauc dosfstools mtools e2fsprogs \
-      grub-efi-amd64-bin grub-common u-boot-tools python3 docker-cli \
+      grub-efi-amd64-bin grub-common u-boot-tools ovmf python3 docker-cli \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
