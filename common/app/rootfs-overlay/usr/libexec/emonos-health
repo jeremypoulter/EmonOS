@@ -56,6 +56,13 @@ done
 # before the record is written so a full or unwritable health directory
 # (which aborts under set -e) still leaves a diagnosis.
 echo "EmonOS health: slot $slot version $version failed after $(($(clock) - started))s: $reason" >/dev/console 2>/dev/null || true
+# Say why the application was not up: its unit state and recent journal, and
+# the container list. Bounded so a wedged docker daemon cannot delay the reboot.
+{
+    echo "EmonOS health: emonos-app state: $(systemctl is-active emonos-app.service 2>&1)"
+    timeout 15 journalctl -u emonos-app.service -n 25 --no-pager 2>&1
+    timeout 15 docker ps -a --format 'container {{.Names}}: {{.Status}}' 2>&1
+} >/dev/console 2>&1 || true
 record "$directory/failures/$boot_id.json" failed
 echo "EmonOS health: slot $slot version $version failed: $reason" >&2
 systemctl reboot
