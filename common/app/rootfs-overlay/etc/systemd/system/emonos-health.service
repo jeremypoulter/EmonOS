@@ -1,7 +1,13 @@
 [Unit]
 Description=EmonOS bounded application health and slot commit
 Wants=rauc.service
-After=local-fs.target rauc.service
+# Order after the one-time image preload, so its 300-second window measures the
+# application start, not the first-boot docker load. On a fresh Pi card the
+# load alone took ~9 minutes, so the monitor rebooted before the application
+# could start, and the load restarted from scratch on every boot. After= only
+# orders: a failed preload still lets the monitor run and fail the slot. Once
+# the preload marker exists, the unit exits at once and adds no delay.
+After=local-fs.target rauc.service emonos-preload.service
 RequiresMountsFor=/mnt/data
 FailureAction=reboot
 # Deliberately no Requires/After=emonos-app: failure there must not prevent us.
