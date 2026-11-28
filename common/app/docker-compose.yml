@@ -2,7 +2,7 @@ name: emonos
 
 services:
   web:
-    image: emonos-preload/web:20260924
+    image: ${EMONOS_WEB_IMAGE:?from images.lock}
     pull_policy: never
     restart: unless-stopped
     environment:
@@ -35,7 +35,7 @@ services:
       mqtt: {condition: service_started}
 
   db:
-    image: emonos-preload/db:20260924
+    image: ${EMONOS_DB_IMAGE:?from images.lock}
     pull_policy: never
     restart: unless-stopped
     stop_grace_period: 90s
@@ -53,7 +53,7 @@ services:
       retries: 60
 
   redis:
-    image: emonos-preload/redis:20260924
+    image: ${EMONOS_REDIS_IMAGE:?from images.lock}
     pull_policy: never
     restart: unless-stopped
     volumes: ["/mnt/data/redis:/data"]
@@ -64,7 +64,7 @@ services:
       retries: 15
 
   mqtt:
-    image: emonos-preload/mqtt:20260924
+    image: ${EMONOS_MQTT_IMAGE:?from images.lock}
     pull_policy: never
     restart: unless-stopped
     command: ["/bin/sh", "-c", "touch /mosquitto/config/passwd && mosquitto_passwd -b /mosquitto/config/passwd emonpi emonpimqtt2016 && exec mosquitto"]
