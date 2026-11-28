@@ -58,7 +58,8 @@ def test_pi_bootstate_is_redundant_and_uses_fixed_partition_offsets():
     ("x86_64", "x86-64-vm", "grub", "emonos-x86-64-vm"),
     ("aarch64", "rpi4", "uboot", "emonos-rpi4-bootstate-v2"),
 ])
-def test_target_config_and_public_only_keyring(tmp_path, architecture, board, backend, compatible):
+@pytest.mark.parametrize("variant", ["buildroot", "debian"])
+def test_target_config_and_public_only_keyring(tmp_path, architecture, board, backend, compatible, variant):
     target = tmp_path / "target"
     (target / "etc").mkdir(parents=True)
     keys = tmp_path / "keys"
@@ -70,9 +71,12 @@ def test_target_config_and_public_only_keyring(tmp_path, architecture, board, ba
     environment = {
         **os.environ, "EMONOS_RAUC_KEY_DIR": str(keys),
         "EMONOS_VERSION": "0.2.0-test", "BR2_CONFIG": str(config),
+        "EMONOS_VARIANT": variant,
     }
     subprocess.run([str(OTA / "prepare-target.sh"), str(target)], env=environment, check=True)
     content = (target / "etc/rauc/system.conf").read_text()
+    if variant == "debian":
+        compatible = compatible.replace("emonos-", "emonos-debian-", 1)
     assert f"compatible={compatible}" in content
     assert f"bootloader={backend}" in content
     assert "@" not in content

@@ -494,9 +494,10 @@ jobs:
           # build there, with the host rauc and keyring the update tests use.
           sudo chown -R "$USER" output
           mv output/debian/x86-64-vm output/x86-64-vm
-          mkdir -p output/x86-64-vm/host/bin output/x86-64-vm/target/etc/rauc
+          mkdir -p output/x86-64-vm/host/bin
           ln -s "$(command -v rauc)" output/x86-64-vm/host/bin/rauc
-          cp output/signing/dev-cert.pem output/x86-64-vm/target/etc/rauc/keyring.pem
+          # Buildroot's target/ is the root filesystem tree; Debian's is work/rootfs.
+          ln -s work/rootfs output/x86-64-vm/target
           ls -l output/x86-64-vm/images
           sha256sum output/x86-64-vm/images/emonos-x86-64-vm.raucb | tee bundle.sha256
 
