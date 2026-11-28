@@ -49,6 +49,7 @@ for slot in kernel.0 rootfs.0 kernel.1 rootfs.1; do
 done > "$data_stage/rauc/central.raucs"
 cp "$external_dir/app/docker-compose.yml" "$target_dir/opt/emonos/docker-compose.yml"
 cp "$lock_file" "$target_dir/opt/emonos/images.lock"
+"$external_dir/app/images-env.sh" "$lock_file" > "$target_dir/opt/emonos/.env"
 mkdir -p "$target_dir/etc/systemd/system/multi-user.target.wants"
 mkdir -p "$target_dir/etc/systemd/system/local-fs.target.wants"
 mkdir -p "$target_dir/mnt/boot"
