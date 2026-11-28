@@ -447,32 +447,84 @@ jobs:
           retention-days: 3
 
   debian-x86-64-vm:
-    name: Build Debian x86-64-vm (VARIANT=debian)
+    name: Build Debian x86-64-vm and test
     needs: lint
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14.7'
+
+      - name: Install QEMU test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes qemu-system-x86 ovmf jq strace rauc
+          python -m pip install --requirement tests/requirements.txt
+
+      - name: Enable KVM acceleration if the runner offers it
+        id: kvm
+        run: |
+          accel=tcg
+          if test -c /dev/kvm; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+            if echo quit | qemu-system-x86_64 -accel kvm -machine q35 -cpu host -m 256 \
+                -display none -nodefaults -S -monitor stdio > /dev/null 2>&1; then
+              accel=kvm
+            fi
+          fi
+          if test "$accel" = tcg; then
+            echo '::warning::KVM is unavailable; falling back to slow TCG emulation.'
+          fi
+          echo "accel=$accel" >> "$GITHUB_OUTPUT"
+
       - name: Build the Debian image
         run: |
           make rauc_dev_keys
           make VARIANT=debian emonos_x86_64_vm
+          # The tests look for the image in output/x86-64-vm. Present the Debian
+          # build there, with the host rauc and keyring the update tests use.
+          sudo chown -R "$USER" output
+          mv output/debian/x86-64-vm output/x86-64-vm
+          mkdir -p output/x86-64-vm/host/bin output/x86-64-vm/target/etc/rauc
+          ln -s "$(command -v rauc)" output/x86-64-vm/host/bin/rauc
+          cp output/signing/dev-cert.pem output/x86-64-vm/target/etc/rauc/keyring.pem
+          ls -l output/x86-64-vm/images
+          sha256sum output/x86-64-vm/images/emonos-x86-64-vm.raucb | tee bundle.sha256
 
-      - name: Check the build outputs
+      - name: Test Debian x86-64 VM (${{ steps.kvm.outputs.accel == 'kvm' && 'KVM' || 'TCG fallback' }})
+        env:
+          EMONOS_QEMU_CPU: ${{ steps.kvm.outputs.accel == 'kvm' && 'host' || 'max' }}
+          EMONOS_QEMU_EXTRA_ARGS: ${{ steps.kvm.outputs.accel == 'kvm' && '-accel kvm -smp 4' || '-accel tcg,thread=multi -smp 4' }}
+          EMONOS_QEMU_DISABLE_IO_URING: '1'
+          EMONOS_QEMU_MIN_AVAILABLE_MB: '4096'
+          EMONOS_QEMU_RAUC_BUNDLE: ${{ github.workspace }}/output/x86-64-vm/images/emonos-x86-64-vm.raucb
+          EMONOS_RUN_REBOOT_TEST: '1'
         run: |
-          images=output/debian/x86-64-vm/images
-          ls -l "$images"
-          for f in emonos-x86-64-vm.img emonos-x86-64-vm.raucb OVMF.fd; do
-            test -s "$images/$f"
-          done
-          sha256sum "$images/emonos-x86-64-vm.raucb" | tee bundle.sha256
-          rauc --keyring=output/signing/dev-cert.pem info "$images/emonos-x86-64-vm.raucb" ||
-            docker run --rm --volume "$PWD:/workspace" --workdir /workspace \
-              emonos-builder-debian:local rauc \
-              --keyring=output/signing/dev-cert.pem info "$images/emonos-x86-64-vm.raucb"
+          sync
+          tests/run.sh x86-64-vm -q
+
+      - name: Show guest console tail after test failures
+        if: failure()
+        run: |
+          find output/test-results/x86-64-vm -path '*labgrid/console_main' -print0 |
+            while IFS= read -r -d '' console; do
+              echo "::group::Guest console tail: $console"
+              sed -E 's/\x1b\[[0-9;:?]*[ -\/]*[@-~]//g;
+                       s/\x1b\][^\x07\x1b]*(\x07|\x1b\\)//g;
+                       s/\x1bP[^\x1b]*\x1b\\//g' "$console" |
+                tr -d '\r' | tail -n 200
+              echo
+              echo '::endgroup::'
+            done
 
       - name: Upload build evidence
         if: always()
@@ -481,6 +533,7 @@ jobs:
           name: debian-x86-64-vm-${{ github.sha }}
           path: |
             bundle.sha256
-            output/debian/x86-64-vm/images/emonos-x86-64-vm.raucb.sha256
+            output/x86-64-vm/images/emonos-x86-64-vm.raucb.sha256
+            output/test-results/x86-64-vm
           if-no-files-found: warn
           retention-days: 14

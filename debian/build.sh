@@ -66,6 +66,7 @@ printf '%s\n' 'BR2_x86_64=y' > "$work/br2.config"
 BR2_CONFIG=$work/br2.config "$common/ota/prepare-target.sh" "$root"
 mkdir -p "$root/opt/emonos" "$root/mnt/boot"
 cp "$common/app/docker-compose.yml" "$common/app/images.lock" "$root/opt/emonos/"
+"$common/app/images-env.sh" "$common/app/images.lock" > "$root/opt/emonos/.env"
 systemctl --root="$root" enable systemd-networkd systemd-resolved docker \
     mnt-data.mount var-lib-docker.mount var.mount mnt-boot.mount etc-ssh.mount \
     emonos-first-boot.service emonos-preload.service emonos-app.service \

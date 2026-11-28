@@ -43,7 +43,7 @@ ifeq ($(VARIANT),debian)
 DEBIAN_BUILDER ?= emonos-builder-debian:local
 emonos_x86_64_vm:
 	docker build --tag $(DEBIAN_BUILDER) $(CURDIR)/ci/builder -f $(CURDIR)/ci/builder/debian.Dockerfile
-	docker run --rm --privileged --env SOURCE_DATE_EPOCH --env EMONOS_VERSION \
+	docker run --rm --privileged --env SOURCE_DATE_EPOCH --env EMONOS_VERSION --env EMONOS_APP_FAULT \
 	    --env EMONOS_RAUC_KEY_DIR=/workspace/output/signing --env EMONOS_DEBIAN_OUTPUT=/workspace/output/debian/x86-64-vm \
 	    --volume $(CURDIR):/workspace --volume /var/run/docker.sock:/var/run/docker.sock \
 	    --workdir /workspace $(DEBIAN_BUILDER) sh debian/build.sh
