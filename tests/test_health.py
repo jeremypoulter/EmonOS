@@ -121,6 +121,9 @@ echo "$(($(cat "$CLOCK") + $1))" > "$CLOCK"
     executable(bin_dir / "sync", "#!/bin/sh\nexit 0\n")
     executable(bin_dir / "timeout", '#!/bin/sh\nshift\nexec "$@"\n')
     executable(bin_dir / "systemctl", '#!/bin/sh\necho "systemctl $*" >> "$CALLS"\n')
+    # Failure diagnostics must never reach the host's journal or Docker daemon.
+    executable(bin_dir / "journalctl", "#!/bin/sh\nexit 0\n")
+    executable(bin_dir / "docker", "#!/bin/sh\nexit 0\n")
     executable(bin_dir / "rauc", f'#!/bin/sh\necho "rauc $*" >> "$CALLS"\nexit {0 if mark_ok else 1}\n')
     probe = tmp_path / "probe"
     executable(probe, f'#!/bin/sh\necho "application service not active"\nexit {0 if probe_ok else 1}\n')
@@ -137,6 +140,7 @@ echo "$(($(cat "$CLOCK") + $1))" > "$CLOCK"
         "/mnt/data/health": tmp_path / "health",
         "/usr/libexec/emonos-health-probe": probe,
         "/run/emonos-health-probe.log": tmp_path / "probe.log",
+        "/dev/console": tmp_path / "console",
     }.items():
         text = text.replace(source, str(destination))
     monitor = tmp_path / "monitor"

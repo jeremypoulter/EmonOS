@@ -377,6 +377,19 @@ jobs:
                 tr -d '\r' | tail -n 200
               echo
               echo '::endgroup::'
+              # The tail can start after the interesting event (a reboot loop
+              # pushes it out), so also list kernel panics and root-mount
+              # errors from the whole console, with their line numbers.
+              echo "::group::Kernel panics and root-mount errors: $console"
+              sed -E 's/\x1b\[[0-9;:?]*[ -\/]*[@-~]//g;
+                       s/\x1b\][^\x07\x1b]*(\x07|\x1b\\)//g;
+                       s/\x1bP[^\x1b]*\x1b\\//g' "$console" | tr -d '\r' |
+                grep -naE -A40 'EmonOS health: slot' | cut -c1-220 || true
+              sed -E 's/\x1b\[[0-9;:?]*[ -\/]*[@-~]//g;
+                       s/\x1b\][^\x07\x1b]*(\x07|\x1b\\)//g;
+                       s/\x1bP[^\x1b]*\x1b\\//g' "$console" | tr -d '\r' |
+                grep -naE 'Kernel panic|VFS: |not syncing|Unable to mount root|EmonOS health:|Booting Slot' || true
+              echo '::endgroup::'
             done
 
       - name: Restore factory x86 artifacts for build evidence
