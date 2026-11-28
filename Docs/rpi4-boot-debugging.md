@@ -76,9 +76,15 @@ systemctl --failed --no-pager
 
 ## Bench connection details
 
-- Serial adapter: `/dev/ttyUSB2` (115200 8N1).
-- Tasmota host: `172.16.1.2`, current Pi power output **1** (`Power1`) as of
-  2026-09-29. Output 5 was used for the 2026-09-25 controlled power-cycle
-  test but is no longer wired to this Pi. Do not operate Power5 for this target.
-- Power1 has not yet had its off/on recovery test; verify its wiring and boot
-  recovery before using it for the later T7 interruption test.
+- Serial console (115200 8N1), as of 2026-11-28:
+  `/dev/serial/by-path/pci-0000:07:00.0-usb-0:2.3.3.2:1.0-port0` (`ttyUSB3`).
+  The adapters are identical CH340s, so always use the `by-path` entry and
+  check it shows `emonos login:` before running tests; ports move when the
+  hub is recabled.
+- Power: the Tasmota single-channel switch at `172.16.0.137`, driven by
+  `./flash.sh status|on|off`. The earlier multi-output Tasmota at
+  `172.16.1.2` (Power1/Power5) no longer feeds this Pi.
+- SD card: the USB SD mux, driven by `./flash.sh` (power off, mux to host,
+  write, mux to DUT, power on).
+- Do not press Enter on the console while the Pi reboots: it stops U-Boot's
+  autoboot. Type `boot` at the `U-Boot>` prompt to continue.

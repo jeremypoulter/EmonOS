@@ -1,6 +1,10 @@
 [Unit]
 Description=EmonOS bounded application health and slot commit
 Wants=rauc.service
+# Deliberately not ordered after emonos-preload or docker: if either never
+# becomes ready, the monitor must still run and fail the slot. On a factory
+# first boot the script itself waits, bounded, for the one-time image preload
+# before it starts the 300-second application window (see emonos-health).
 After=local-fs.target rauc.service
 RequiresMountsFor=/mnt/data
 FailureAction=reboot
@@ -10,7 +14,9 @@ FailureAction=reboot
 Type=oneshot
 ExecStart=/usr/libexec/emonos-health
 RemainAfterExit=yes
-TimeoutStartSec=315
+# Backstop only; the script bounds itself. 3600 s for a factory first-boot
+# preload wait, plus the 300-second application window and 15 s of margin.
+TimeoutStartSec=3915
 
 [Install]
 WantedBy=multi-user.target
