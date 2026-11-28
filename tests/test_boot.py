@@ -17,28 +17,19 @@ from common import (
 
 REQUIRED_CGROUP_CONTROLLERS = {"cpu", "cpuset", "io", "memory", "pids"}
 
-PRELOAD_IMAGES = {
-    "web": (
-        "ghcr.io/jeremypoulter/emoncms@sha256:"
-        "2686f3c0631ecc2e9951a69a6b601beb53547688c03f5013e388f57b786fd099",
-        "emonos-preload/web:20260924",
-    ),
-    "db": (
-        "mariadb:11.8-noble@sha256:"
-        "79d59758afc91b89b120b0a8904d637f5a3b3e1c4900f29b740d6d46c72fef68",
-        "emonos-preload/db:20260924",
-    ),
-    "redis": (
-        "redis:8.10-trixie@sha256:"
-        "718f745deb7dfefeac6eed7041fc7ec9476b50e61b247932682457c41adafa0e",
-        "emonos-preload/redis:20260924",
-    ),
-    "mqtt": (
-        "eclipse-mosquitto:2.0-openssl@sha256:"
-        "199ea8ef2e35ec2b1b37e59cfd1dbae538ed4dfa4a2251a121a52215a6248a21",
-        "emonos-preload/mqtt:20260924",
-    ),
-}
+def _load_preload_images() -> dict[str, tuple[str, str]]:
+    """Image refs come only from app/images.lock: {name: (source, local_tag)}."""
+    lock = Path(__file__).parents[1] / "common/app/images.lock"
+    values: dict[str, str] = {}
+    for line in lock.read_text().splitlines():
+        if line and not line.startswith("#"):
+            key, _, value = line.partition("=")
+            values[key] = value
+    names = sorted(key.removesuffix(".source") for key in values if key.endswith(".source"))
+    return {name: (values[f"{name}.source"], values[f"{name}.local_tag"]) for name in names}
+
+
+PRELOAD_IMAGES = _load_preload_images()
 
 
 def test_target_image_is_present(target_name: str, repo_root: Path) -> None:
@@ -220,9 +211,16 @@ def test_container_crash_restarts_web(command) -> None:
 
     # `docker kill` is an intentional operator stop and suppresses Docker's
     # restart policy. Kill the actual container process to model a crash.
-    command.run_check(
-        "kill -KILL \"$(docker inspect -f '{{.State.Pid}}' emonos-web-1)\""
+    # Only kill a running container with a real PID. `kill -KILL 0` signals the
+    # whole process group, which takes down the console login session and fails
+    # every later test with a lost console; the container can briefly report
+    # PID 0 while it restarts, so wait for a running state instead.
+    killed = command.poll_until_success(
+        "pid=\"$(docker inspect -f '{{.State.Pid}}' emonos-web-1)\" "
+        "&& test \"${pid:-0}\" -gt 0 && kill -KILL \"$pid\"",
+        tries=20, timeout=90.0, sleepduration=3,
     )
+    assert killed, command.run_check("docker inspect emonos-web-1")
     recovered = command.poll_until_success(
         "test \"$(docker inspect -f '{{.RestartCount}}' emonos-web-1)\" -ge 1 "
         "&& curl -fsS --max-time 5 http://127.0.0.1/ >/dev/null",
@@ -377,28 +375,11 @@ def test_offline_preload(command, target_name: str) -> None:
     for _, local_tag in PRELOAD_IMAGES.values():
         command.run_check(f"docker image inspect {local_tag} >/dev/null")
 
-    compose = """services:
-  web:
-    image: emonos-preload/web:20260924
-    pull_policy: never
-    entrypoint: [sleep]
-    command: ["120"]
-  db:
-    image: emonos-preload/db:20260924
-    pull_policy: never
-    entrypoint: [sleep]
-    command: ["120"]
-  redis:
-    image: emonos-preload/redis:20260924
-    pull_policy: never
-    entrypoint: [sleep]
-    command: ["120"]
-  mqtt:
-    image: emonos-preload/mqtt:20260924
-    pull_policy: never
-    entrypoint: [sleep]
-    command: ["120"]
-"""
+    compose = "services:\n" + "".join(
+        f"  {name}:\n    image: {local_tag}\n    pull_policy: never\n"
+        "    entrypoint: [sleep]\n    command: [\"120\"]\n"
+        for name, (_, local_tag) in PRELOAD_IMAGES.items()
+    )
     encoded = base64.b64encode(compose.encode()).decode()
     command.run_check(f"printf %s {encoded} | base64 -d > /mnt/compose.yml")
     default_route = next(

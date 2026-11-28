@@ -41,7 +41,10 @@ jobs:
             -print0 | xargs -0r shellcheck
 
       - name: Validate Compose definition
-        run: docker compose -f common/app/docker-compose.yml config --quiet
+        run: |
+          common/app/images-env.sh common/app/images.lock > "$RUNNER_TEMP/images.env"
+          docker compose --env-file "$RUNNER_TEMP/images.env" \
+            -f common/app/docker-compose.yml config --quiet
 
       - name: Validate data-image host tool selections
         run: |
