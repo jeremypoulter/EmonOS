@@ -361,6 +361,24 @@ jobs:
           EMONOS_TEST_REPORT_DIR=output/test-results/x86-64-vm/wp7-power-cut \
             tests/run.sh x86-64-vm -q -k interrupted_install_keeps_active_slot
 
+      - name: Show guest console tail after update-test failures
+        if: ${{ failure() && matrix.test }}
+        run: |
+          # The login-prompt timeouts in this step are hard to diagnose from
+          # the pytest output alone, so print what the guest console showed.
+          find output/test-results/x86-64-vm -path '*labgrid/console_main' -print0 |
+            while IFS= read -r -d '' console; do
+              echo "::group::Guest console tail: $console"
+              # Strip CSI (including colon-separated colours), OSC and DCS
+              # sequences; the guest emits systemd OSC/DCS context markers.
+              sed -E 's/\x1b\[[0-9;:?]*[ -\/]*[@-~]//g;
+                       s/\x1b\][^\x07\x1b]*(\x07|\x1b\\)//g;
+                       s/\x1bP[^\x1b]*\x1b\\//g' "$console" |
+                tr -d '\r' | tail -n 200
+              echo
+              echo '::endgroup::'
+            done
+
       - name: Restore factory x86 artifacts for build evidence
         if: ${{ always() && matrix.test }}
         run: |
