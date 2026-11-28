@@ -98,29 +98,41 @@ with open(dest, 'w') as output:
     assert (result.returncode == 0) == success, result.stderr
 
 
-@pytest.mark.parametrize("probe_ok,mark_ok,outcome,elapsed", [
-    (True, True, "good", 0), (True, False, "failed", 0),
-    (False, True, "failed", 300),
-])
-def test_monitor_commit_failure_and_monotonic_deadline(tmp_path, probe_ok, mark_ok, outcome, elapsed):
-    if not shutil.which("jq"):
-        pytest.skip("install jq for host-only health policy tests")
+def run_monitor(tmp_path, probe_ok, mark_ok, preload="done"):
+    """Run a path-instrumented copy of the monitor on a fake monotonic clock.
+
+    preload: "done" (marker present, as on every boot after the first),
+    "finishes-at-<s>" (the marker appears when the clock reaches <s>),
+    "failed" (the preload unit failed, no marker) or "hung" (never finishes).
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     counter = tmp_path / "clock"
     counter.write_text("0")
     calls = tmp_path / "calls"
+    marker = tmp_path / "preload.done"
+    finishes = ""
+    if preload == "done":
+        marker.write_text("x\n")
+    elif preload.startswith("finishes-at-"):
+        finishes = preload.removeprefix("finishes-at-")
     environment = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
-                   "CLOCK": str(counter), "CALLS": str(calls)}
+                   "CLOCK": str(counter), "CALLS": str(calls), "MARKER": str(marker),
+                   "FINISHES": finishes, "PRELOAD_STATE": "failed" if preload == "failed" else "activating"}
     executable(bin_dir / "cut", """#!/bin/sh
 case "$*" in *'/proc/uptime'*) cat "$CLOCK" ;; *) exec /usr/bin/cut "$@" ;; esac
 """)
     executable(bin_dir / "sleep", """#!/bin/sh
-echo "$(($(cat "$CLOCK") + $1))" > "$CLOCK"
+now=$(($(cat "$CLOCK") + $1))
+echo "$now" > "$CLOCK"
+if [ -n "$FINISHES" ] && [ "$now" -ge "$FINISHES" ]; then echo x > "$MARKER"; fi
 """)
     executable(bin_dir / "sync", "#!/bin/sh\nexit 0\n")
     executable(bin_dir / "timeout", '#!/bin/sh\nshift\nexec "$@"\n')
-    executable(bin_dir / "systemctl", '#!/bin/sh\necho "systemctl $*" >> "$CALLS"\n')
+    executable(bin_dir / "systemctl", """#!/bin/sh
+echo "systemctl $*" >> "$CALLS"
+case "$*" in 'is-active emonos-preload.service') echo "$PRELOAD_STATE" ;; esac
+""")
     executable(bin_dir / "rauc", f'#!/bin/sh\necho "rauc $*" >> "$CALLS"\nexit {0 if mark_ok else 1}\n')
     probe = tmp_path / "probe"
     executable(probe, f'#!/bin/sh\necho "application service not active"\nexit {0 if probe_ok else 1}\n')
@@ -135,21 +147,69 @@ echo "$(($(cat "$CLOCK") + $1))" > "$CLOCK"
         "/proc/cmdline": tmp_path / "cmdline",
         "/proc/sys/kernel/random/boot_id": tmp_path / "boot-id",
         "/mnt/data/health": tmp_path / "health",
+        "/mnt/data/.preload.done": marker,
         "/usr/libexec/emonos-health-probe": probe,
         "/run/emonos-health-probe.log": tmp_path / "probe.log",
     }.items():
+        assert source in text, source
         text = text.replace(source, str(destination))
     monitor = tmp_path / "monitor"
     executable(monitor, text)
     result = subprocess.run([str(monitor)], env=environment, capture_output=True, text=True)
+    return result, tmp_path / "health", calls.read_text() if calls.exists() else ""
+
+
+@pytest.mark.parametrize("probe_ok,mark_ok,outcome,elapsed", [
+    (True, True, "good", 0), (True, False, "failed", 0),
+    (False, True, "failed", 300),
+])
+def test_monitor_commit_failure_and_monotonic_deadline(tmp_path, probe_ok, mark_ok, outcome, elapsed):
+    if not shutil.which("jq"):
+        pytest.skip("install jq for host-only health policy tests")
+    result, health, commands = run_monitor(tmp_path, probe_ok, mark_ok)
     assert result.returncode == (0 if outcome == "good" else 1), result.stderr
-    record_path = tmp_path / "health" / ("last-good.json" if outcome == "good" else "failures/test-boot.json")
+    record_path = health / ("last-good.json" if outcome == "good" else "failures/test-boot.json")
     record = json.loads(record_path.read_text())
     assert record["elapsed_seconds"] == elapsed
     assert record["outcome"] == outcome
     assert record["slot"] == "B" and record["version"] == "0.2.0-broken"
-    commands = calls.read_text()
     assert ("rauc status mark-good" in commands) == probe_ok
     assert ("systemctl reboot" in commands) == (outcome != "good")
+    # With the preload marker present the monitor never waits on the preload.
+    assert "is-active emonos-preload" not in commands
     if probe_ok and not mark_ok:
         assert record["reason"] == "RAUC mark-good failed"
+
+
+@pytest.mark.parametrize("preload,probe_ok,outcome,elapsed,reason", [
+    # First boot: a 700 s load is waited for, then the app window starts.
+    ("finishes-at-700", True, "good", 700, None),
+    # The 300 s application window starts after the load, not at boot.
+    ("finishes-at-700", False, "failed", 1000, "application service not active"),
+    # A failed preload ends the wait at once; the app window then fails.
+    ("failed", False, "failed", 300, "application service not active"),
+    # Docker or the preload never finishing still ends in the failure path.
+    ("hung", True, "failed", 3600, "first-boot image preload did not finish within 3600 seconds"),
+])
+def test_monitor_waits_for_first_boot_preload_within_its_bound(tmp_path, preload, probe_ok, outcome, elapsed, reason):
+    if not shutil.which("jq"):
+        pytest.skip("install jq for host-only health policy tests")
+    result, health, commands = run_monitor(tmp_path, probe_ok, True, preload)
+    assert result.returncode == (0 if outcome == "good" else 1), result.stderr
+    record_path = health / ("last-good.json" if outcome == "good" else "failures/test-boot.json")
+    record = json.loads(record_path.read_text())
+    assert record["outcome"] == outcome
+    assert record["elapsed_seconds"] == elapsed
+    if reason:
+        assert record["reason"] == reason
+    assert ("systemctl reboot" in commands) == (outcome != "good")
+    if preload == "hung":
+        assert "rauc status mark-good" not in commands
+
+
+def test_health_unit_is_not_ordered_after_docker_or_preload():
+    unit = (OVERLAY / "etc/systemd/system/emonos-health.service").read_text()
+    ordering = " ".join(line for line in unit.splitlines()
+                        if line.split("=")[0] in {"After", "Requires", "Wants", "BindsTo", "Requisite"})
+    assert "emonos-preload" not in ordering and "docker" not in ordering
+    assert "FailureAction=reboot" in unit

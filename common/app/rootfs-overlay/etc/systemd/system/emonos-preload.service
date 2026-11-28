@@ -8,8 +8,8 @@ Before=emonos-app.service
 Type=oneshot
 ExecStart=/usr/libexec/emonos-preload
 RemainAfterExit=yes
-# emonos-health waits for this unit. Bound it so a hung load still ends and
-# lets the health monitor fail the slot, rather than holding it off forever.
+# On a factory first boot emonos-health waits up to 3600 s for this unit's
+# completion marker. Bound the load to match, so a hung load ends too.
 TimeoutStartSec=3600
 
 [Install]

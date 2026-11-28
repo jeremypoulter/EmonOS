@@ -3,7 +3,6 @@ set -eu
 umask 077
 clock() { cut -d. -f1 /proc/uptime; }
 started=$(clock)
-deadline=$((started + 300))
 version=$(cat /usr/lib/emonos/version)
 slot=$(sed -n 's/.*rauc.slot=\([AB]\).*/\1/p' /proc/cmdline)
 test -n "$slot"
@@ -13,6 +12,7 @@ mkdir -p "$directory/failures"
 chmod 700 "$directory" "$directory/failures"
 reason='application did not become healthy'
 probe_log=/run/emonos-health-probe.log
+preload_done=/mnt/data/.preload.done
 
 record() {
     destination=$1
@@ -25,6 +25,28 @@ record() {
     mv "$destination.tmp" "$destination"
     sync
 }
+
+# Factory first boot only: the one-time image preload can take many minutes
+# on a slow SD card (~12 minutes on the bench), so wait for its completion
+# marker before starting the application window. Wait in this script rather
+# than with systemd ordering, so a Docker or preload that never becomes ready
+# still ends in the failure path below. Updated slots always find the marker
+# and start their 300-second window at once.
+preload_timed_out=0
+if [ ! -e "$preload_done" ]; then
+    preload_deadline=$((started + 3600))
+    while [ ! -e "$preload_done" ]; do
+        [ "$(systemctl is-active emonos-preload.service 2>/dev/null || true)" != failed ] || break
+        if [ "$(clock)" -ge "$preload_deadline" ]; then
+            reason='first-boot image preload did not finish within 3600 seconds'
+            preload_timed_out=1
+            break
+        fi
+        sleep 5
+    done
+fi
+deadline=$(($(clock) + 300))
+[ "$preload_timed_out" -eq 0 ] || deadline=$(clock)
 
 while :; do
     remaining=$((deadline - $(clock)))
