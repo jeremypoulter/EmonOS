@@ -52,5 +52,9 @@ done
 
 record "$directory/failures/$boot_id.json" failed
 echo "EmonOS health: slot $slot version $version failed: $reason" >&2
+# Also put the reason on the serial console: it is about to reboot the machine,
+# and console logs (including CI guest console tails) otherwise show a reboot
+# with no explanation. Only on failure, so normal boots stay quiet.
+echo "EmonOS health: slot $slot version $version failed after $(($(clock) - started))s: $reason" >/dev/console 2>/dev/null || true
 systemctl reboot
 exit 1
